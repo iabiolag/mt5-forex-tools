@@ -1,0 +1,712 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Daily Pips Dashboard</title>
+<style>
+:root {
+  color-scheme: light;
+  --page: #f6f6f3; --surface: #fcfcfb; --surface-2: #f0efec; --line: #e2e1dc;
+  --ink: #0b0b0b; --ink-2: #52514e; --ink-3: #7a7974;
+  --accent: #2a78d6; --accent-soft: #e6f0fc;
+  --good: #0ca30c; --good-ink: #006300; --good-soft: #e3f5e3;
+  --bad: #d03b3b; --bad-ink: #a32222; --bad-soft: #fbe6e6;
+  --warn: #fab219; --warn-ink: #7a5200; --warn-soft: #fff4dc;
+  --side-soft: #ecebe7;
+  --shadow: 0 1px 2px rgba(0,0,0,.05), 0 2px 8px rgba(0,0,0,.04);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --page: #0d0d0d; --surface: #1a1a19; --surface-2: #242422; --line: #33332f;
+    --ink: #ffffff; --ink-2: #c3c2b7; --ink-3: #8f8e86;
+    --accent: #3987e5; --accent-soft: #15253a;
+    --good: #0ca30c; --good-ink: #5fd35f; --good-soft: #12301a;
+    --bad: #d03b3b; --bad-ink: #ff8a8a; --bad-soft: #3a1717;
+    --warn: #fab219; --warn-ink: #ffcf66; --warn-soft: #362a0d;
+    --side-soft: #2a2a27;
+    --shadow: none;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0d0d0d; --surface: #1a1a19; --surface-2: #242422; --line: #33332f;
+  --ink: #ffffff; --ink-2: #c3c2b7; --ink-3: #8f8e86;
+  --accent: #3987e5; --accent-soft: #15253a;
+  --good: #0ca30c; --good-ink: #5fd35f; --good-soft: #12301a;
+  --bad: #d03b3b; --bad-ink: #ff8a8a; --bad-soft: #3a1717;
+  --warn: #fab219; --warn-ink: #ffcf66; --warn-soft: #362a0d;
+  --side-soft: #2a2a27;
+  --shadow: none;
+}
+* { box-sizing: border-box; }
+body { margin: 0; overflow-x: hidden; background: var(--page); color: var(--ink);
+  font: 16px/1.5 "Segoe UI", system-ui, -apple-system, sans-serif; }
+a { color: var(--accent); }
+button, input { font: inherit; color: inherit; }
+.wrap { max-width: 1280px; margin: 0 auto; padding: 0 16px 48px; }
+
+/* top bar */
+header { position: sticky; top: 0; z-index: 10; background: var(--page); border-bottom: 1px solid var(--line); }
+.bar { max-width: 1280px; margin: 0 auto; padding: 10px 16px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.brand { font-weight: 700; font-size: 18px; text-decoration: none; color: var(--ink); white-space: nowrap; }
+.brand span { color: var(--accent); }
+.search { flex: 1 1 260px; position: relative; }
+.search input { width: 100%; padding: 10px 14px 10px 38px; border: 1px solid var(--line); border-radius: 10px;
+  background: var(--surface); font-size: 16px; }
+.search input:focus { outline: 2px solid var(--accent); outline-offset: 0; border-color: transparent; }
+.search svg { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--ink-3); }
+.btn { border: 1px solid var(--line); background: var(--surface); border-radius: 10px; padding: 9px 14px; cursor: pointer; white-space: nowrap; }
+.btn:hover { background: var(--surface-2); }
+.updated { color: var(--ink-3); font-size: 13px; white-space: nowrap; }
+
+/* blocks */
+h1 { font-size: 28px; margin: 24px 0 4px; line-height: 1.2; }
+h2 { font-size: 20px; margin: 0 0 12px; }
+.sub { color: var(--ink-2); margin: 0 0 16px; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 18px; box-shadow: var(--shadow); }
+.section { margin-top: 20px; }
+.muted { color: var(--ink-3); }
+.small { font-size: 13px; }
+.grid { display: grid; gap: 14px; }
+.tiles { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); }
+.tile { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
+.tile .k { color: var(--ink-2); font-size: 13px; }
+.tile .v { font-size: 26px; font-weight: 700; line-height: 1.2; font-variant-numeric: tabular-nums; }
+.tile .h { color: var(--ink-3); font-size: 12.5px; margin-top: 2px; }
+
+.banner { display: flex; gap: 14px; align-items: flex-start; border-radius: 14px; padding: 16px 18px; margin-top: 20px; }
+.banner.ok { background: var(--good-soft); }
+.banner.stop { background: var(--bad-soft); }
+.banner .icon { font-size: 28px; line-height: 1; }
+.banner b { font-size: 19px; display: block; }
+.banner ul { margin: 6px 0 0; padding-left: 20px; }
+
+.badge { display: inline-flex; align-items: center; gap: 4px; font-weight: 700; font-size: 13px;
+  padding: 3px 9px; border-radius: 999px; white-space: nowrap; }
+.badge.up { background: var(--good-soft); color: var(--good-ink); }
+.badge.down { background: var(--bad-soft); color: var(--bad-ink); }
+.badge.side { background: var(--side-soft); color: var(--ink-2); }
+.badge.warn { background: var(--warn-soft); color: var(--warn-ink); }
+.badge.plan { background: var(--accent-soft); color: var(--accent); }
+
+/* controls */
+.controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 22px 0 14px; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--surface); }
+.seg button { border: 0; background: none; padding: 7px 14px; cursor: pointer; }
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button[aria-pressed="true"] { background: var(--accent); color: #fff; }
+.count { color: var(--ink-2); margin-left: auto; }
+
+/* pair cards */
+.cards { display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(min(250px, 100%), 1fr)); }
+.pcard { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; cursor: pointer;
+  text-align: left; box-shadow: var(--shadow); display: flex; flex-direction: column; justify-content: flex-start; width: 100%; }
+.pcard:hover, .pcard:focus-visible { border-color: var(--accent); outline: none; }
+.pcard .top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.pcard .name { font-size: 20px; font-weight: 700; }
+.pcard .full { color: var(--ink-3); font-size: 13px; margin-bottom: 10px; }
+.pcard dl { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; margin: 0; font-size: 14.5px; }
+.pcard dt { color: var(--ink-2); }
+.pcard dd { margin: 0; font-weight: 600; text-align: right; font-variant-numeric: tabular-nums; }
+.pcard .flags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.arrow { font-size: 15px; }
+
+/* table */
+.tablewrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+th, td { padding: 8px 10px; text-align: right; white-space: nowrap; border-bottom: 1px solid var(--line); }
+th { font-size: 12.5px; color: var(--ink-2); font-weight: 600; vertical-align: bottom; position: sticky; top: 0; background: var(--surface); cursor: help; }
+th:first-child, td:first-child { text-align: left; position: sticky; left: 0; background: var(--surface); }
+tbody tr { cursor: pointer; }
+tbody tr:hover td { background: var(--surface-2); }
+td.sep, th.sep { border-left: 2px solid var(--line); }
+tr:last-child td { border-bottom: 0; }
+
+details.help { margin-top: 14px; }
+details.help summary { cursor: pointer; color: var(--accent); font-weight: 600; }
+.gloss { display: grid; grid-template-columns: minmax(130px, 200px) 1fr; gap: 6px 16px; margin-top: 10px; font-size: 14.5px; }
+.gloss dt { font-weight: 600; }
+.gloss dd { margin: 0; color: var(--ink-2); }
+
+/* pair page */
+.back { display: inline-block; margin-top: 18px; text-decoration: none; font-weight: 600; }
+.pairhead { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; }
+.price { font-size: 15px; color: var(--ink-2); }
+.verdict { border-radius: 14px; padding: 18px; }
+.verdict.ready { background: var(--good-soft); }
+.verdict.no { background: var(--surface); border: 1px solid var(--line); }
+.verdict .big { font-size: 22px; font-weight: 700; }
+.checks { list-style: none; padding: 0; margin: 12px 0 0; display: grid; gap: 8px; }
+.checks li { display: grid; grid-template-columns: 30px 1fr; gap: 8px; align-items: start; }
+.checks .mark { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; color: #fff; font-size: 15px; }
+.checks .mark.ok { background: var(--good); }
+.checks .mark.no { background: var(--bad); }
+.checks b { display: block; }
+.checks span { color: var(--ink-2); font-size: 14.5px; }
+.two { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr)); }
+.two > * { min-width: 0; }
+.lv { width: 100%; }
+.lv td, .lv th { text-align: left; padding: 7px 8px; cursor: default; position: static; }
+.lv td.num { text-align: right; font-weight: 600; }
+.lv tr.hl td { background: var(--accent-soft); }
+.chartbox { position: relative; }
+.chartbox svg { display: block; width: 100%; height: auto; }
+.tip { position: absolute; pointer-events: none; background: var(--surface); border: 1px solid var(--line); border-radius: 8px;
+  padding: 8px 10px; font-size: 13px; box-shadow: 0 4px 14px rgba(0,0,0,.12); display: none; white-space: nowrap; z-index: 2; }
+.legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 13px; color: var(--ink-2); margin-top: 8px; }
+.legend i { display: inline-block; width: 14px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: middle; }
+.gauge { position: relative; height: 14px; border-radius: 7px; background: var(--surface-2); margin: 26px 0 8px; }
+.gauge .zone { position: absolute; top: 0; bottom: 0; }
+.gauge .dot { position: absolute; top: 50%; width: 22px; height: 22px; border-radius: 50%; transform: translate(-50%, -50%);
+  border: 3px solid var(--surface); box-shadow: 0 0 0 1px var(--ink-3); }
+.gauge .val { position: absolute; top: -24px; transform: translateX(-50%); font-weight: 700; font-size: 14px; }
+.gscale { display: flex; justify-content: space-between; font-size: 12.5px; color: var(--ink-3); }
+.lookbacks { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 14px; }
+.lookbacks div { background: var(--surface-2); border-radius: 10px; padding: 10px; text-align: center; }
+.hbar { display: grid; grid-template-columns: 150px 1fr 64px; gap: 8px; align-items: center; font-size: 14px; margin: 5px 0; }
+.hbar .track { height: 16px; }
+.hbar .fill { height: 16px; border-radius: 0 4px 4px 0; background: var(--accent); min-width: 2px; }
+.hbar .n { text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
+.everything td:first-child { font-weight: 600; white-space: normal; position: static; }
+.everything td { text-align: left; white-space: normal; vertical-align: top; cursor: default; }
+.everything td.val { text-align: right; white-space: nowrap; font-weight: 600; }
+.everything tbody tr { cursor: default; }
+.error { background: var(--bad-soft); color: var(--bad-ink); border-radius: 12px; padding: 16px; margin-top: 20px; }
+.loading { color: var(--ink-2); padding: 40px 0; text-align: center; }
+.hide { display: none !important; }
+@media (max-width: 640px) {
+  h1 { font-size: 23px; }
+  .hbar { grid-template-columns: 110px 1fr 54px; }
+  .updated { display: none; }
+  .gloss { grid-template-columns: 1fr; }
+  .gloss dd { margin-bottom: 8px; }
+}
+</style>
+</head>
+<body>
+<header>
+  <div class="bar">
+    <a class="brand" href="#/">Daily <span>Pips</span></a>
+    <form class="search" id="searchForm" autocomplete="off">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+      <input id="q" list="symbols" type="search" placeholder="Search a pair (EURUSD) or a currency (GBP, gold)…" aria-label="Search a pair or currency">
+      <datalist id="symbols"></datalist>
+    </form>
+    <button class="btn" id="refresh" title="Get fresh numbers from MT5">↻ Refresh</button>
+    <span class="updated" id="updated"></span>
+  </div>
+</header>
+<main class="wrap" id="app"><div class="loading">Loading numbers from MT5…</div></main>
+
+<script>
+const NAMES = { EUR: "Euro", USD: "US Dollar", GBP: "British Pound", JPY: "Japanese Yen", CHF: "Swiss Franc",
+  AUD: "Australian Dollar", NZD: "New Zealand Dollar", CAD: "Canadian Dollar", SGD: "Singapore Dollar",
+  XAU: "Gold", XAG: "Silver", BTC: "Bitcoin", ETH: "Ethereum", HKD: "Hong Kong Dollar", ZAR: "South African Rand",
+  MXN: "Mexican Peso", NOK: "Norwegian Krone", SEK: "Swedish Krona", TRY: "Turkish Lira", CNH: "Chinese Yuan" };
+const ALIASES = { GOLD: "XAU", SILVER: "XAG", EURO: "EUR", POUND: "GBP", CABLE: "GBPUSD", YEN: "JPY", DOLLAR: "USD",
+  AUSSIE: "AUD", KIWI: "NZD", LOONIE: "CAD", SWISSY: "CHF", FRANC: "CHF" };
+
+// What every number means - used for table header tooltips, the glossary and the pair page.
+const FIELDS = [
+  ["trend", "D1 trend", "", "Which way price has been going on the daily chart. UP = rising (only BUY), DOWN = falling (only SELL), SIDE = no clear direction (stand aside)."],
+  ["score", "Trend score", "", "How strong the trend is, from -1 (strong fall) to +1 (strong rise). UP/DOWN needs at least ±{trend}. Same maths as your DTF_Dashboard indicator."],
+  ["tf", "Each 20/60/120", "", "Direction over the last 20, 60 and 120 days. '+ + +' or '- - -' = all three agree (the cleanest trend). Mixed signs = they disagree."],
+  ["today", "Today so far", "pips", "How far today's daily candle has moved from its high to its low so far. It is still forming. Blank when the market is closed."],
+  ["used", "Used of day", "%", "Today so far as a % of a typical day. Near or over 100% = most of today's move is probably done."],
+  ["room_up", "Room up", "pips", "How many pips price can still go UP today if today ends up a typical-sized day. Matters for a BUY."],
+  ["room_down", "Room down", "pips", "How many pips price can still go DOWN today if today ends up a typical-sized day. Matters for a SELL."],
+  ["yesterday", "Yesterday candle", "pips", "How far yesterday's daily candle moved from its high to its low."],
+  ["typical_now", "Typical day now", "pips", "The middle value of the last 20 daily candles - how far this pair normally moves in one day right now."],
+  ["vol_vs_6m", "Vol vs 6m", "%", "Is it moving more or less than usual? 100% = normal. Over 120% = 'hot' (wilder than usual). Under 80% = 'quiet'."],
+  ["atr_d1", "ATR 14 D1", "pips", "The same number as MT5's ATR(14) indicator on the daily chart, turned into pips. Compare it with 'Typical day now': ATR is usually a bit higher, because it averages in big days and gaps."],
+  ["atr_h4", "ATR 14 H4", "pips", "MT5's ATR(14) on the 4-hour chart, in pips. It only covers the last ~2.5 days, so it jumps after big news days. It is naturally 1.5-2.5x the 'Typical H4 candle' (quiet night candles pull the typical value down), so don't compare those two."],
+  ["sl_unit", "Typical H4 candle", "pips", "The middle value of the last ~20 days of 4-hour candles. Your SL and TP are built from this."],
+  ["SL", "Suggested SL", "pips", "Stop loss distance = {sl} × typical H4 candle. Type this into the order ticket."],
+  ["TP", "Suggested TP", "pips", "Take profit distance = {tp} × typical H4 candle (twice your SL)."],
+  ["lot", "Lot (1% risk)", "lot", "The lot that loses about {risk}% of your account if the SL is hit. If you set a lot cap (--max-lot), the cards and pair pages use the smaller of the two."],
+  ["risk_usd", "Loss if SL hit", "$", "Dollars you lose at that lot if the stop loss is hit. '!' = even the smallest lot is more than {risk}% - SKIP."],
+  ["avg_12m", "Avg day 12m", "pips", "Average daily candle size over the last 12 months (for reference)."],
+  ["avg_6m", "Avg day 6m", "pips", "Average daily candle size over the last 6 months."],
+  ["typical_6m", "Typical day 6m", "pips", "Middle daily candle size over 6 months. Compare with 'Typical day now'."],
+  ["quiet_6m", "Quiet day 6m", "pips", "A quiet day: 1 day in 4 over the last 6 months was smaller than this."],
+  ["busy_6m", "Busy day 6m", "pips", "A busy day: 1 day in 4 over the last 6 months was bigger than this."],
+  ["spread_normal", "Normal spread", "pips", "The broker's usual cost to open a trade (middle value over the last ~20 days). Over 15% of a typical day = too expensive for this pair."],
+  ["spread", "Spread now", "pips", "The cost to open a trade right now. At weekends and around the daily rollover (about 22:00-02:00 your time) it is several times the normal spread - wait for it to come back down."],
+  ["pip_value", "Pip value (1 lot)", "$", "Dollars one pip is worth on 1.00 lot. On 0.01 lot divide by 100."],
+];
+const FIELD = Object.fromEntries(FIELDS.map(f => [f[0], f]));
+
+const state = { ov: null, view: load("view", "cards"), show: load("show", "all"), q: "" };
+function load(k, d) { try { return localStorage.getItem("dp_" + k) || d; } catch (e) { return d; } }
+function save(k, v) { try { localStorage.setItem("dp_" + k, v); } catch (e) {} }
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const n0 = v => v == null ? "–" : Math.round(v).toLocaleString();
+const usd = v => v == null ? "–" : (v < 0 ? "-$" : "$") + Math.abs(v).toFixed(2);
+const signed$ = v => v == null ? "–" : (v >= 0 ? "+$" : "-$") + Math.abs(v).toFixed(2);
+const fmt = (k, v) => {
+  if (v == null) return "–";
+  if (k === "score") return (v >= 0 ? "+" : "") + v.toFixed(2);
+  if (k === "used" || k === "vol_vs_6m") return Math.round(v) + "%";
+  if (k === "lot") return v.toFixed(2);
+  if (k === "risk_usd" || k === "pip_value") return usd(v);
+  if (k === "spread" || k === "spread_normal") return v < 10 ? v.toFixed(1) : n0(v);
+  if (typeof v === "number") return n0(v);
+  return esc(v);
+};
+const explain = k => FIELD[k][3].replace(/\{(\w+)\}/g, (_, s) => state.ov ? state.ov.settings[s] : s);
+function pairName(sym) {
+  const a = sym.slice(0, 3), b = sym.slice(3, 6);
+  return NAMES[a] && NAMES[b] ? `${NAMES[a]} vs ${NAMES[b]}` : NAMES[a] ? NAMES[a] + " in " + b : "";
+}
+function rolloverNote() {
+  const h = new Date().getHours();  // your computer's clock
+  if (h < 22 && h >= 2) return "";
+  return `<div class="banner stop" style="background:var(--warn-soft)"><div class="icon">🌙</div><div>
+    <b>Rollover hours (22:00–02:00 your time) – don't open trades now</b>
+    <span class="small">Spreads are several times wider than normal right now (see "Spread now" vs "Normal spread"). Wait until after 02:00.</span></div></div>`;
+}
+function trendBadge(t, big) {
+  const map = { UP: ["up", "▲", "UP"], DOWN: ["down", "▼", "DOWN"], SIDE: ["side", "◆", "SIDEWAYS"] };
+  const [cls, ar, label] = map[t] || ["side", "?", "–"];
+  return `<span class="badge ${cls}" ${big ? 'style="font-size:16px;padding:5px 12px"' : ""}><span class="arrow">${ar}</span>${label}</span>`;
+}
+function trendWords(r) {
+  if (r.trend === "UP") return r.tf === "+ + +" ? "Rising clearly - look for BUYS only" : "Rising, but not all timeframes agree";
+  if (r.trend === "DOWN") return r.tf === "- - -" ? "Falling clearly - look for SELLS only" : "Falling, but not all timeframes agree";
+  return "No clear direction - stand aside";
+}
+function flags(r) {
+  const f = [];
+  if (r.on_plan) f.push(`<span class="badge plan">★ My pair</span>`);
+  if (r.too_small) f.push(`<span class="badge down">✕ SKIP – SL too big for 0.01</span>`);
+  if (r.vol_vs_6m >= 120) f.push(`<span class="badge warn">🔥 Hot – moving more than usual</span>`);
+  else if (r.vol_vs_6m <= 80) f.push(`<span class="badge side">💤 Quiet</span>`);
+  if ((r.spread_normal ?? r.spread) >= 0.15 * r.typical_now) f.push(`<span class="badge warn">$ Expensive spread</span>`);
+  const room = { UP: r.room_up, DOWN: r.room_down }[r.trend];
+  if (room != null && room < 0.25 * r.typical_now) f.push(`<span class="badge warn">Little room left today</span>`);
+  return f.join("");
+}
+
+async function api(path) {
+  const res = await fetch(path);
+  const j = await res.json();
+  if (j.error) throw new Error(j.error);
+  return j;
+}
+async function getOverview(force) {
+  if (!state.ov || force) {
+    state.ov = await api("/api/overview" + (force ? "?refresh=1" : ""));
+    $("#symbols").innerHTML = state.ov.rows.map(r => `<option value="${r.symbol}">${esc(pairName(r.symbol))}</option>`).join("");
+  }
+  $("#updated").textContent = "Updated " + state.ov.generated;
+  return state.ov;
+}
+function showError(e) {
+  $("#app").innerHTML = `<div class="error"><b>Something went wrong:</b> ${esc(e.message)}<br>
+    Check MT5 is open and connected, keep the black dashboard window open, then press Refresh.</div>`;
+}
+
+/* ---------------- search ---------------- */
+function normalise(q) {
+  q = q.trim().toUpperCase().replace(/[^A-Z]/g, "");
+  return ALIASES[q] || q;
+}
+function matches(r, q) {
+  if (!q) return true;
+  return r.symbol.includes(q) || pairName(r.symbol).toUpperCase().includes(q);
+}
+$("#searchForm").addEventListener("submit", e => {
+  e.preventDefault();
+  const q = normalise($("#q").value);
+  if (!q) return;
+  const rows = state.ov ? state.ov.rows : [];
+  const exact = rows.find(r => r.symbol === q);
+  const hits = rows.filter(r => matches(r, q));
+  if (exact || (q.length === 6 && !hits.length) || hits.length === 1 && q.length > 3) {
+    $("#q").value = "";
+    state.q = "";
+    location.hash = "#/pair/" + (exact ? exact.symbol : hits.length === 1 ? hits[0].symbol : q);
+  } else {
+    state.q = q;
+    if (state.show !== "all") { state.show = "all"; save("show", "all"); }
+    if (!location.hash.startsWith("#/pair")) renderOverview(); else location.hash = "#/";
+  }
+});
+$("#q").addEventListener("input", () => {
+  const raw = $("#q").value;
+  const q = normalise(raw);
+  // Picking a suggestion from the list jumps straight to that pair.
+  if (state.ov && state.ov.rows.some(r => r.symbol === raw.trim().toUpperCase()) && raw.trim().length === 6) {
+    $("#q").value = ""; state.q = "";
+    location.hash = "#/pair/" + raw.trim().toUpperCase();
+    return;
+  }
+  state.q = q;
+  if (!location.hash.startsWith("#/pair")) renderList();
+});
+$("#refresh").addEventListener("click", async () => {
+  $("#refresh").disabled = true; $("#refresh").textContent = "↻ Loading…";
+  try { await getOverview(true); route(); } catch (e) { showError(e); }
+  $("#refresh").disabled = false; $("#refresh").textContent = "↻ Refresh";
+});
+
+/* ---------------- overview ---------------- */
+async function renderOverview() {
+  let ov;
+  try { ov = await getOverview(); } catch (e) { return showError(e); }
+  const s = ov.settings, a = ov.account;
+  const ok = !ov.stops.length;
+  $("#app").innerHTML = `
+    <h1>Today's pairs</h1>
+    <p class="sub">How far each pair moves in a day, which way it's trending, and where to put your stop loss and take profit.
+      All plain numbers are <b>pips</b>. Click any pair to open its own page.</p>
+    <div class="banner ${ok ? "ok" : "stop"}">
+      <div class="icon">${ok ? "✅" : "⛔"}</div>
+      <div><b>${ok ? "OK to trade today - you are within all your limits" : "STOP trading for today"}</b>
+        ${ok ? `<span class="small">Max ${s.max_trades} new trades a day · stop at -${s.max_loss}% for the day · stop after ${s.max_losses} losses in a row` +
+               (s.max_week_loss ? ` · -${s.max_week_loss}% for the week` : "") + (s.max_month_loss ? ` · -${s.max_month_loss}% for the month` : "") +
+               (s.floor ? ` · balance floor $${s.floor}` : "") + `.</span>`
+             : `<ul>${ov.stops.map(x => `<li>${esc(x)}</li>`).join("")}</ul><span class="small">Manage the trades you have open, but open nothing new until tomorrow.</span>`}
+        ${ov.warnings.length ? `<ul>${ov.warnings.map(w => `<li>⚠️ ${esc(w)}</li>`).join("")}</ul>` : ""}
+      </div>
+    </div>
+    ${rolloverNote()}
+    ${ov.market_open ? "" : `<p class="muted small" style="margin-top:12px">🕑 The market is closed right now (weekend or holiday). "Today so far" and "Room" are blank; everything else is up to date.</p>`}
+    <div class="tiles section">
+      <div class="tile"><div class="k">Balance</div><div class="v">${usd(a.balance)}</div></div>
+      <div class="tile"><div class="k">Equity (incl. open trades)</div><div class="v">${usd(a.equity)}</div></div>
+      <div class="tile"><div class="k">Your ${s.risk}% risk per trade</div><div class="v">${usd(a.risk_money)}</div><div class="h">Lot sizes are built from this</div></div>
+      <div class="tile"><div class="k">Open trades</div><div class="v">${ov.open_count} <span class="muted" style="font-size:16px">of ${s.max_open}</span></div></div>
+    </div>
+    <div class="controls">
+      <div class="seg" role="group" aria-label="Which pairs">
+        <button data-show="plan">★ My plan pairs</button><button data-show="trend">Trending only</button><button data-show="all">All pairs</button>
+      </div>
+      <div class="seg" role="group" aria-label="Layout">
+        <button data-view="cards">Simple cards</button><button data-view="table">Full table</button>
+      </div>
+      <span class="count" id="count"></span>
+    </div>
+    <div id="list"></div>
+    <details class="help card section"><summary>What do all the numbers mean?</summary>
+      <dl class="gloss">${FIELDS.map(f => `<dt>${f[1]}${f[2] && f[2] !== "lot" ? ` <span class="muted small">(${f[2]})</span>` : ""}</dt><dd>${esc(explain(f[0]))}</dd>`).join("")}</dl>
+      <p class="small muted">Pips vs points: if MT5 or an EA asks for POINTS, currency pairs 1 pip = 10 points (30 pips = 300 points); gold here 1 pip = 100 points.
+      Normal pairs 1 pip = 0.0001 in price, JPY pairs 0.01, gold $0.10.</p>
+    </details>
+    <details class="help card section"><summary>Full text of the open-trades and daily-limits checks</summary>
+      <pre class="small" style="overflow-x:auto">${esc(ov.open_text)}\n\n${esc(ov.limits_text)}</pre>
+    </details>`;
+  document.querySelectorAll("[data-show]").forEach(b => b.onclick = () => { state.show = b.dataset.show; save("show", state.show); renderList(); });
+  document.querySelectorAll("[data-view]").forEach(b => b.onclick = () => { state.view = b.dataset.view; save("view", state.view); renderList(); });
+  renderList();
+}
+
+function renderList() {
+  const list = $("#list");
+  if (!list || !state.ov) return;
+  document.querySelectorAll("[data-show]").forEach(b => b.setAttribute("aria-pressed", b.dataset.show === state.show));
+  document.querySelectorAll("[data-view]").forEach(b => b.setAttribute("aria-pressed", b.dataset.view === state.view));
+  let rows = state.ov.rows.filter(r => matches(r, state.q));
+  if (state.show === "plan") rows = rows.filter(r => r.on_plan);
+  if (state.show === "trend") rows = rows.filter(r => r.trend === "UP" || r.trend === "DOWN");
+  const qName = state.q.length === 3 && NAMES[state.q] ? ` with ${state.q} (${NAMES[state.q]})` : state.q ? ` matching "${state.q}"` : "";
+  $("#count").innerHTML = `${rows.length} pair${rows.length === 1 ? "" : "s"}${esc(qName)}` +
+    (state.q ? ` · <a href="#" id="clearq">clear search</a>` : "");
+  const c = $("#clearq"); if (c) c.onclick = e => { e.preventDefault(); state.q = ""; $("#q").value = ""; renderList(); };
+  if (!rows.length) {
+    list.innerHTML = `<div class="card">No pairs here. ${state.q.length === 6 ? `<a href="#/pair/${esc(state.q)}">Look up ${esc(state.q)} anyway →</a>` : "Try another search, or choose “All pairs”."}</div>`;
+    return;
+  }
+  if (state.view === "cards") {
+    list.innerHTML = `<div class="cards">${rows.map(r => `
+      <button class="pcard" data-sym="${r.symbol}">
+        <div class="top"><span class="name">${r.symbol}</span>${trendBadge(r.trend)}</div>
+        <div class="full">${esc(pairName(r.symbol))}</div>
+        <dl>
+          <dt>Direction</dt><dd>${esc(trendWords(r).split(" - ")[0])}</dd>
+          <dt>Moves a day</dt><dd>${n0(r.typical_now)} pips</dd>
+          <dt>Stop loss</dt><dd>${n0(r.SL)} pips</dd>
+          <dt>Take profit</dt><dd>${n0(r.TP)} pips</dd>
+          <dt>Lot · loss if SL hit</dt><dd>${fmt("lot", r.plan_lot)} · ${usd(r.plan_loss)}</dd>
+        </dl>
+        <div class="flags">${flags(r)}</div>
+      </button>`).join("")}</div>`;
+  } else {
+    const cols = ["trend", "score", "tf", "|", "today", "used", "room_up", "room_down", "yesterday", "typical_now", "vol_vs_6m", "atr_d1", "atr_h4",
+      ...(state.ov.settings.sl_tf === "H4" ? ["sl_unit"] : []), "SL", "TP", "lot", "risk_usd", "|",
+      "avg_12m", "avg_6m", "typical_6m", "quiet_6m", "busy_6m", "spread_normal", "spread"];
+    let sep = false;
+    const head = cols.map(k => { if (k === "|") { sep = true; return ""; } const s = sep; sep = false;
+      return `<th class="${s ? "sep" : ""}" title="${esc(explain(k))}">${FIELD[k][1]}${FIELD[k][2] && FIELD[k][2] !== "lot" ? `<br><span class="muted">${FIELD[k][2]}</span>` : ""}</th>`; }).join("");
+    const body = rows.map(r => { let sp = false; return `<tr data-sym="${r.symbol}"><td><b>${r.symbol}</b>${r.on_plan ? " <span title='My plan pair'>★</span>" : ""}</td>` +
+      cols.map(k => { if (k === "|") { sp = true; return ""; } const s = sp; sp = false;
+        const v = k === "trend" ? trendBadge(r.trend) : k === "risk_usd" ? usd(r.risk_usd) + (r.too_small ? " ⚠️" : "") : fmt(k, r[k]);
+        return `<td class="${s ? "sep" : ""}">${v}</td>`; }).join("") + "</tr>"; }).join("");
+    list.innerHTML = `<div class="tablewrap"><table><thead><tr><th>Pair</th>${head}</tr></thead><tbody>${body}</tbody></table></div>
+      <p class="small muted">Hover a column title to see what it means. Sorted strongest trend first. ⚠️ = SKIP: even the smallest lot loses more than ${state.ov.settings.risk}%.</p>`;
+  }
+  list.querySelectorAll("[data-sym]").forEach(el => el.onclick = () => location.hash = "#/pair/" + el.dataset.sym);
+}
+
+/* ---------------- pair page ---------------- */
+async function renderPair(sym) {
+  $("#app").innerHTML = `<a class="back" href="#/">← All pairs</a><div class="loading">Loading ${esc(sym)}…</div>`;
+  let p;
+  try { await getOverview(); p = await api("/api/pair?s=" + encodeURIComponent(sym)); }
+  catch (e) { return showError(e); }
+  const r = p.row, s = p.settings;
+  if (r.symbol !== sym) { history.replaceState(null, "", "#/pair/" + r.symbol); }
+  const dg = p.digits;
+  const px = v => v == null ? "–" : Number(v).toFixed(dg);
+  const failed = p.checks.filter(c => !c.ok).length;
+  const h = p.history;
+  const won = h.filter(t => t.net > 0).length;
+  const net = h.reduce((a, t) => a + t.net, 0);
+  const pipsSum = h.reduce((a, t) => a + (t.pips || 0), 0);
+
+  $("#app").innerHTML = `
+    <a class="back" href="#/">← All pairs</a>
+    <div class="pairhead">
+      <h1>${r.symbol}</h1>${trendBadge(r.trend, true)}${r.on_plan ? `<span class="badge plan">★ My plan pair</span>` : `<span class="badge side">Not on my plan list</span>`}
+    </div>
+    <p class="sub">${esc(pairName(r.symbol))}${p.bid ? ` · Price now: sell ${px(p.bid)} / buy ${px(p.ask)}` : ""}${p.market_open ? "" : " · market closed (last prices)"}</p>
+
+    <div class="verdict ${p.ready ? "ready" : "no"}">
+      <div class="big">${p.ready ? `✅ Trade setup is READY: ${p.side}` : `🚫 No trade on ${r.symbol} today`}</div>
+      <div class="muted">${p.ready ? "All your plan's checks pass. Use the SL, TP and lot below." :
+        `${failed} of ${p.checks.length} checks from your trading plan ${failed === 1 ? "is" : "are"} missing. If even one is missing: NO TRADE.`}</div>
+      <ul class="checks">${p.checks.map(c => `<li><span class="mark ${c.ok ? "ok" : "no"}" aria-label="${c.ok ? "yes" : "no"}">${c.ok ? "✓" : "✕"}</span>
+        <div><b>${esc(c.title)}</b><span>${esc(c.why)}</span></div></li>`).join("")}</ul>
+    </div>
+
+    <div class="tiles section">
+      <div class="tile"><div class="k">Which way</div><div class="v" style="font-size:20px">${trendBadge(r.trend)}</div><div class="h">${esc(trendWords(r))}</div></div>
+      <div class="tile"><div class="k">Stop loss</div><div class="v">${n0(r.SL)} <small>pips</small></div><div class="h">= ${n0(r.SL * p.points_per_pip)} points</div></div>
+      <div class="tile"><div class="k">Take profit</div><div class="v">${n0(r.TP)} <small>pips</small></div><div class="h">= ${n0(r.TP * p.points_per_pip)} points · 2× your risk</div></div>
+      <div class="tile"><div class="k">Lot size</div><div class="v">${fmt("lot", r.plan_lot)}</div><div class="h">${r.lot > r.plan_lot + 1e-9 ? `1% would allow ${fmt("lot", r.lot)} – your plan caps it at ${s.max_lot}` : s.max_lot ? `Your plan: ${s.max_lot} max` : `For ${s.risk}% risk`}</div></div>
+      <div class="tile"><div class="k">Loss if SL is hit</div><div class="v" style="color:${r.too_small ? "var(--bad-ink)" : "inherit"}">${usd(r.plan_loss)}</div><div class="h">${r.too_small ? "More than " + s.risk + "% - SKIP" : (r.plan_loss / state.ov.account.sizing * 100).toFixed(1) + "% of your account"}</div></div>
+      <div class="tile"><div class="k">Moves in a normal day</div><div class="v">${n0(r.typical_now)} <small>pips</small></div><div class="h">${Math.round(r.vol_vs_6m)}% of its usual (${r.vol_vs_6m >= 120 ? "hot" : r.vol_vs_6m <= 80 ? "quiet" : "normal"})</div></div>
+    </div>
+
+    <div class="card section">
+      <h2>Daily chart – last ${p.candles.length} days</h2>
+      <p class="sub small">Each candle = one day. <b style="color:var(--good-ink)">Green</b> = price went up that day, <b style="color:var(--bad-ink)">red</b> = it went down.
+        The shaded area is the last 5 days your plan checks for a pullback. Hover a candle for its numbers.</p>
+      <div class="chartbox" id="chart"></div>
+      <div class="legend" id="chartLegend"></div>
+    </div>
+
+    <div class="two section">
+      <div class="card">
+        <h2>Where would my SL and TP go?</h2>
+        ${p.levels ? `<p class="sub small">If you opened at today's price with the suggested ${n0(r.SL)} pip SL and ${n0(r.TP)} pip TP${p.side ? ` (your trend says <b>${p.side}</b>)` : ""}:</p>
+        <div style="overflow-x:auto"><table class="lv"><thead><tr><th></th><th>Open at</th><th>Stop loss</th><th>Take profit</th></tr></thead><tbody>
+          ${["BUY", "SELL"].map(sd => `<tr class="${p.side === sd ? "hl" : ""}"><td><b>${sd}</b>${p.side === sd ? " ←" : ""}</td>
+            <td class="num">${px(p.levels[sd].entry)}</td><td class="num">${px(p.levels[sd].sl)}</td><td class="num">${px(p.levels[sd].tp)}</td></tr>`).join("")}
+        </tbody></table></div>
+        <p class="small muted">${p.market_open ? "Prices move every second - work it out again from the real price when you open." : "Market closed: these use the last price. Recalculate when the market opens."}
+          ${p.side ? "" : " SIDEWAYS trend: your plan says no trade either way."}</p>` : `<p class="muted">No live price yet.</p>`}
+      </div>
+      <div class="card">
+        <h2>How strong is the trend?</h2>
+        ${gauge(r.score, s.trend)}
+        <div class="gscale"><span>Strong fall −1</span><span>Sideways 0</span><span>Strong rise +1</span></div>
+        <div class="lookbacks">${(r.comps || []).map((c, i) => `<div><div class="small muted">Last ${[20, 60, 120][i]} days</div>
+          <div style="font-weight:700;font-size:18px;color:${c > 0 ? "var(--good-ink)" : "var(--bad-ink)"}">${c > 0 ? "▲ up" : "▼ down"}</div>
+          <div class="small muted">${(c >= 0 ? "+" : "") + c.toFixed(2)}</div></div>`).join("")}</div>
+        <p class="small muted">UP or DOWN needs the score past ±${s.trend}. All three boxes the same colour = the cleanest trend.</p>
+      </div>
+    </div>
+
+    <div class="card section">
+      <h2>Double-check with MT5's ATR(14)</h2>
+      <p class="sub small">Add the <b>ATR</b> indicator (period 14) to the chart in MT5 and read the value of the <b>last closed candle</b>
+        (open the Data Window with Ctrl+D and hover that candle). MT5 shows it as a price – here it is in pips too.</p>
+      ${atrCheck(r, p)}
+    </div>
+
+    <div class="two section">
+      <div class="card">
+        <h2>How far does it move?</h2>
+        <p class="sub small">Size of one daily candle, high to low, in pips – compared with your SL and TP.</p>
+        ${moveBars(r)}
+      </div>
+      <div class="card">
+        <h2>Today</h2>
+        ${r.today == null ? `<p class="muted">The market is closed${p.market_open ? " for this pair" : ""} – today's candle has not started. Check again when it opens.</p>` : `
+        <div class="tiles" style="grid-template-columns:repeat(2,1fr)">
+          <div class="tile"><div class="k">Moved so far</div><div class="v">${n0(r.today)} <small>pips</small></div></div>
+          <div class="tile"><div class="k">Used of a normal day</div><div class="v">${n0(r.used)}%</div></div>
+          <div class="tile"><div class="k">Room left UP</div><div class="v">${n0(r.room_up)} <small>pips</small></div><div class="h">for a BUY</div></div>
+          <div class="tile"><div class="k">Room left DOWN</div><div class="v">${n0(r.room_down)} <small>pips</small></div><div class="h">for a SELL</div></div>
+        </div>
+        <p class="small muted">Near 100% used = most of today's move is probably done. Room is a guide, not a ceiling: about 1 day in 4 is bigger than a busy day.</p>`}
+      </div>
+    </div>
+
+    <div class="card section">
+      <h2>My open trades on ${r.symbol}</h2>
+      ${p.positions.length ? `<div class="tablewrap"><table><thead><tr><th>Side</th><th>Lot</th><th>Opened</th><th>Open price</th><th>SL</th><th>TP</th><th>Profit now</th></tr></thead><tbody>
+        ${p.positions.map(t => `<tr style="cursor:default"><td><b>${t.side}</b></td><td>${t.lot.toFixed(2)}</td><td>${t.opened}</td><td>${px(t.open)}</td>
+          <td>${t.sl ? `${px(t.sl)} <span class="muted">(${n0(t.sl_pips)} pips)</span>` : `<b style="color:var(--bad-ink)">NO SL!</b>`}</td>
+          <td>${t.tp ? `${px(t.tp)} <span class="muted">(${n0(t.tp_pips)} pips)</span>` : "–"}</td>
+          <td style="color:${t.profit >= 0 ? "var(--good-ink)" : "var(--bad-ink)"}">${signed$(t.profit)}</td></tr>`).join("")}
+      </tbody></table></div>` : `<p class="muted">No trade open on this pair.</p>`}
+    </div>
+
+    <div class="card section">
+      <h2>My past trades on ${r.symbol}</h2>
+      ${h.length ? `<div class="tiles" style="margin-bottom:14px">
+        <div class="tile"><div class="k">Trades</div><div class="v">${h.length}</div></div>
+        <div class="tile"><div class="k">Won / lost</div><div class="v">${won} / ${h.length - won}</div><div class="h">${Math.round(won / h.length * 100)}% won</div></div>
+        <div class="tile"><div class="k">Total pips</div><div class="v" style="color:${pipsSum >= 0 ? "var(--good-ink)" : "var(--bad-ink)"}">${(pipsSum >= 0 ? "+" : "") + pipsSum.toFixed(1)}</div></div>
+        <div class="tile"><div class="k">Total money</div><div class="v" style="color:${net >= 0 ? "var(--good-ink)" : "var(--bad-ink)"}">${signed$(net)}</div></div>
+      </div>
+      <div class="tablewrap"><table><thead><tr><th>Closed</th><th>Opened</th><th>Side</th><th>Lot</th><th>Pips</th><th>Money</th><th>How it closed</th></tr></thead><tbody>
+        ${h.map(t => `<tr style="cursor:default"><td>${t.closed}</td><td>${t.opened}</td><td>${t.side}</td><td>${t.lot.toFixed(2)}</td>
+          <td>${t.pips == null ? "–" : (t.pips >= 0 ? "+" : "") + t.pips.toFixed(1)}</td>
+          <td style="color:${t.net >= 0 ? "var(--good-ink)" : "var(--bad-ink)"}">${signed$(t.net)}</td><td>${esc(t.how)}</td></tr>`).join("")}
+      </tbody></table></div>` : `<p class="muted">You haven't traded ${r.symbol} yet.</p>`}
+    </div>
+
+    <div class="card section">
+      <h2>Every number for ${r.symbol}</h2>
+      <p class="sub small">The same numbers as the big table, one per line, with what each one means.</p>
+      <div class="tablewrap"><table class="everything"><tbody>
+        ${FIELDS.filter(f => f[0] !== "sl_unit" || s.sl_tf === "H4").map(f => `<tr><td>${f[1]}</td>
+          <td class="val">${f[0] === "trend" ? trendBadge(r.trend) : fmt(f[0], r[f[0]])}${f[2] === "pips" && r[f[0]] != null ? " pips" : ""}</td>
+          <td class="muted">${esc(explain(f[0]))}</td></tr>`).join("")}
+      </tbody></table></div>
+    </div>
+    <p class="small muted section">Numbers from MT5 at ${esc(p.generated)}. This page only reads data – it never places, changes or closes trades.</p>`;
+  drawChart(p);
+  window.scrollTo(0, 0);
+}
+
+function atrCheck(r, p) {
+  const rows = [["D1 (daily) chart", r.atr_d1, r.typical_now, "Typical day now"],
+                ["H4 (4-hour) chart", r.atr_h4, r.atr_h4_20d, "Normal H4 ATR, last 20 days"]];
+  const mult = p.pip < 0.001 ? 10000 : p.pip < 0.05 ? 100 : 10;
+  return `<div class="tablewrap"><table class="lv"><thead><tr><th>ATR(14) on the</th><th>MT5 shows</th><th>= pips</th><th>The tool's number</th><th>ATR vs tool</th></tr></thead><tbody>
+    ${rows.map(([lab, a, t, tname]) => { if (a == null) return `<tr><td>${lab}</td><td colspan="4" class="muted">not enough candles</td></tr>`;
+      const pct = a / t * 100;
+      const word = pct >= 160 ? ["warn", "Much wilder than usual right now"] : pct >= 130 ? ["warn", "Wilder than usual right now"] :
+                   pct < 80 ? ["side", "Calmer than usual right now"] : ["up", "Normal – they agree"];
+      return `<tr><td><b>${lab}</b></td><td class="num">${(a * p.pip).toFixed(p.digits)}</td><td class="num">${n0(a)} pips</td>
+        <td class="num">${n0(t)} pips <span class="muted small">(${tname})</span></td>
+        <td>${Math.round(pct)}% <span class="badge ${word[0]}">${word[1]}</span></td></tr>`; }).join("")}
+  </tbody></table></div>
+  <p class="small muted">Turning MT5's ATR into pips: multiply by ${mult.toLocaleString()} for ${r.symbol}.
+    D1: ATR is normally a little higher than "Typical day now" (it averages in big days and gaps), so up to ~130% is fine.
+    H4: compared with its own 20-day normal, because H4 ATR is always well above the "Typical H4 candle" (${n0(r.sl_unit)} pips).
+    Much higher = the last few days were unusually big (often news) – be careful. Your SL stays the tool's suggested SL (${n0(r.SL)} pips).</p>`;
+}
+
+function gauge(score, thr) {
+  if (score == null) return `<p class="muted">Not enough history for a trend score.</p>`;
+  const pos = v => ((v + 1) / 2 * 100) + "%";
+  const color = score >= thr ? "var(--good)" : score <= -thr ? "var(--bad)" : "var(--ink-3)";
+  return `<div class="gauge" role="img" aria-label="Trend score ${score.toFixed(2)}">
+    <div class="zone" style="left:0;width:${pos(-thr)};background:var(--bad-soft);border-radius:7px 0 0 7px"></div>
+    <div class="zone" style="left:${pos(thr)};right:0;background:var(--good-soft);border-radius:0 7px 7px 0"></div>
+    <div class="dot" style="left:${pos(score)};background:${color}"></div>
+    <div class="val" style="left:${pos(score)}">${(score >= 0 ? "+" : "") + score.toFixed(2)}</div></div>`;
+}
+
+function moveBars(r) {
+  const items = [["Quiet day (6m)", r.quiet_6m], ["Typical day (6m)", r.typical_6m], ["Busy day (6m)", r.busy_6m],
+    ["Typical day NOW", r.typical_now, true], ["Yesterday", r.yesterday], ["Today so far", r.today],
+    ["Your stop loss", r.SL, false, "var(--bad)"], ["Your take profit", r.TP, false, "var(--good)"]];
+  const max = Math.max(...items.map(i => i[1] || 0));
+  return items.map(([label, v, bold, col]) => `<div class="hbar"><span style="${bold ? "font-weight:700" : ""}">${label}</span>
+    <div class="track"><div class="fill" style="width:${v == null ? 0 : v / max * 100}%;${col ? "background:" + col : ""}"></div></div>
+    <span class="n">${v == null ? "–" : n0(v)}</span></div>`).join("") +
+    `<p class="small muted">Your SL is ${Math.round(r.SL / r.typical_now * 100)}% of a normal day – price can hit it in one ordinary day, which is why the trend must be on your side.</p>`;
+}
+
+function drawChart(p) {
+  const box = $("#chart"), cs = getComputedStyle(document.documentElement);
+  const col = n => cs.getPropertyValue(n).trim();
+  const data = p.candles;
+  const W = 900, H = 380, L = 8, R = 84, T = 12, B = 40;
+  const levels = p.side && p.levels ? p.levels[p.side] : null;
+  let lo = Math.min(...data.map(c => c.low)), hi = Math.max(...data.map(c => c.high));
+  if (levels) { lo = Math.min(lo, levels.sl, levels.tp); hi = Math.max(hi, levels.sl, levels.tp); }
+  const pad = (hi - lo) * 0.04; lo -= pad; hi += pad;
+  const n = data.length, step = (W - L - R) / n, bw = Math.max(2, step * 0.62);
+  const x = i => L + step * i + step / 2, y = v => T + (hi - v) / (hi - lo) * (H - T - B);
+  const dg = p.digits, up = col("--good"), dn = col("--bad"), ink3 = col("--ink-3"), line = col("--line");
+  let svg = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${p.row.symbol} daily candles">`;
+  // pullback window
+  const first = data.findIndex(c => c.date === p.pullback_window[0]);
+  if (first >= 0) svg += `<rect x="${L + step * first}" y="${T}" width="${step * (n - first)}" height="${H - T - B}" fill="${col("--accent-soft")}"/>`;
+  // grid + price labels
+  for (let i = 0; i <= 5; i++) {
+    const v = lo + (hi - lo) * i / 5, yy = y(v);
+    const clash = levels && ["tp", "sl", "entry"].some(k => Math.abs(y(levels[k]) - yy) < 16);
+    svg += `<line x1="${L}" x2="${W - R}" y1="${yy}" y2="${yy}" stroke="${line}" stroke-width="1"/>`;
+    if (!clash) svg += `<text x="${W - R + 6}" y="${yy + 4}" font-size="12" fill="${ink3}">${v.toFixed(dg)}</text>`;
+  }
+  // month labels
+  let lastM = "";
+  data.forEach((c, i) => { const m = c.date.slice(0, 7); if (m !== lastM) { lastM = m;
+    if (i > 0) svg += `<line x1="${x(i) - step / 2}" x2="${x(i) - step / 2}" y1="${T}" y2="${H - B}" stroke="${line}" stroke-dasharray="2 4"/>`;
+    svg += `<text x="${x(i) - step / 2 + 3}" y="${H - 10}" font-size="12" fill="${ink3}">${new Date(c.date + "T00:00").toLocaleString("en", { month: "short" })}</text>`; } });
+  // SL / TP lines for the trend side
+  if (levels) {
+    // Tags sorted top to bottom and pushed apart so they never cover each other
+    const tags = [["tp", up, "TP"], ["sl", dn, "SL"], ["entry", ink3, "Now"]]
+      .map(([k, c, lab]) => ({ k, c, lab, yy: y(levels[k]), ty: y(levels[k]) })).sort((a, b) => a.yy - b.yy);
+    tags.forEach((t, i) => { if (i && t.ty < tags[i - 1].ty + 20) t.ty = tags[i - 1].ty + 20; });
+    tags.forEach(({ k, c, lab, yy, ty }) => {
+      svg += `<line x1="${L}" x2="${W - R}" y1="${yy}" y2="${yy}" stroke="${c}" stroke-width="1.5" stroke-dasharray="6 4"/>
+        <rect x="${W - R + 2}" y="${ty - 9}" width="${R - 4}" height="18" rx="4" fill="${c}"/>
+        <text x="${W - R + 6}" y="${ty + 4}" font-size="11.5" fill="#fff" font-weight="700">${lab} ${levels[k].toFixed(dg)}</text>`;
+    });
+  }
+  // candles
+  data.forEach((c, i) => {
+    const color = c.close >= c.open ? up : dn;
+    const top = y(Math.max(c.open, c.close)), bot = y(Math.min(c.open, c.close));
+    svg += `<line x1="${x(i)}" x2="${x(i)}" y1="${y(c.high)}" y2="${y(c.low)}" stroke="${color}" stroke-width="1.5"/>
+      <rect x="${x(i) - bw / 2}" y="${top}" width="${bw}" height="${Math.max(1.5, bot - top)}" rx="1.5" fill="${color}"/>`;
+  });
+  // 20-day average line
+  svg += `<polyline fill="none" stroke="${col("--accent")}" stroke-width="2" points="${data.map((c, i) => `${x(i)},${y(c.ema20)}`).join(" ")}"/>`;
+  svg += `<line id="xhair" y1="${T}" y2="${H - B}" stroke="${ink3}" stroke-width="1" visibility="hidden"/>`;
+  svg += `<rect id="hit" x="${L}" y="${T}" width="${W - L - R}" height="${H - T - B}" fill="transparent"/></svg><div class="tip" id="tip"></div>`;
+  box.innerHTML = svg;
+  $("#chartLegend").innerHTML = `<span><i style="background:${up}"></i>Up day</span><span><i style="background:${dn}"></i>Down day</span>
+    <span><i style="background:${col("--accent")};height:3px"></i>20-day average (price above it = rising)</span>
+    <span><i style="background:${col("--accent-soft")}"></i>Last 5 days (pullback check)</span>
+    ${levels ? `<span>Dashed lines = where your ${p.side} SL / TP would go if opened now</span>` : ""}`;
+  const svgEl = box.querySelector("svg"), tip = $("#tip"), xh = $("#xhair");
+  svgEl.querySelector("#hit").addEventListener("mousemove", e => {
+    const rect = svgEl.getBoundingClientRect(), sx = (e.clientX - rect.left) / rect.width * W;
+    const i = Math.max(0, Math.min(n - 1, Math.floor((sx - L) / step))), c = data[i];
+    xh.setAttribute("x1", x(i)); xh.setAttribute("x2", x(i)); xh.setAttribute("visibility", "visible");
+    const pips = (c.high - c.low) / p.pip, chg = (c.close - c.open) / p.pip;
+    tip.innerHTML = `<b>${new Date(c.date + "T00:00").toLocaleDateString("en", { weekday: "short", day: "numeric", month: "short", year: "numeric" })}</b><br>
+      ${chg >= 0 ? "▲ Up" : "▼ Down"} ${Math.abs(chg).toFixed(0)} pips (open→close)<br>Moved ${pips.toFixed(0)} pips high→low<br>
+      <span class="muted">Open ${c.open.toFixed(dg)} · Close ${c.close.toFixed(dg)}<br>High ${c.high.toFixed(dg)} · Low ${c.low.toFixed(dg)}</span>`;
+    tip.style.display = "block";
+    const px = x(i) / W * rect.width;
+    tip.style.left = (px > rect.width / 2 ? px - tip.offsetWidth - 14 : px + 14) + "px";
+    tip.style.top = "10px";
+  });
+  svgEl.querySelector("#hit").addEventListener("mouseleave", () => { tip.style.display = "none"; xh.setAttribute("visibility", "hidden"); });
+}
+
+/* ---------------- router ---------------- */
+function route() {
+  const m = location.hash.match(/^#\/pair\/([A-Za-z0-9.]+)/);
+  if (m) renderPair(m[1].toUpperCase()); else renderOverview();
+}
+window.addEventListener("hashchange", route);
+route();
+</script>
+</body>
+</html>
