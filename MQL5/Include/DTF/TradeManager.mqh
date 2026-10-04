@@ -157,7 +157,16 @@ bool CTradeManager::Init(const string symbol,const ulong magic,
    m_trade.SetTypeFillingBySymbol(m_symbol);
 
    ZeroMemory(m_pos);
-   LoadState();
+   //--- A saved state means we had a position when we last ran. If it
+   //--- is still open, DetectClose keeps it; if it closed while the EA
+   //--- was off (stop hit overnight with the terminal shut), this is
+   //--- the only chance to journal it - and it must not linger, or its
+   //--- stale 1R would be grafted onto the next position adopted.
+   if(LoadState() && m_pos.ticket>0)
+     {
+      m_pos.active=true;
+      DetectClose(0.0);
+     }
    Sync();
    return(true);
   }

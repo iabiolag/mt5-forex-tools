@@ -105,6 +105,12 @@ datetime          g_pending_bar  = 0;
 double            g_pending_sig  = 0.0;
 SDtfVolState      g_pending_vs;
 
+//--- Last closed bar whose decision was carried out, kept in a terminal
+//--- global variable so it survives a restart. Without it, a terminal
+//--- opened in the morning (after the rollover) never sees a "new bar"
+//--- that day and the open trade goes unmanaged until tomorrow.
+string            g_done_gv = "";
+
 //+------------------------------------------------------------------+
 int OnInit()
   {
@@ -153,6 +159,28 @@ int OnInit()
    datetime t[];
    if(CopyTime(_Symbol,PERIOD_D1,0,1,t)==1)
       g_last_bar=t[0];
+
+   //--- Catch up after a restart: if the last closed bar's decision was
+   //--- never carried out, latch it on the first tick. Only when we know
+   //--- the EA ran here before (the global exists) or a position needs
+   //--- managing - a first attach still waits for the next bar, as before.
+   //--- The tester always starts clean, so it keeps the old behaviour.
+   g_done_gv="DTF_done_"+_Symbol+"_"+IntegerToString((long)InpMagic);
+   if(!MQLInfoInteger(MQL_TESTER))
+     {
+      datetime closed[];
+      if(CopyTime(_Symbol,PERIOD_D1,1,1,closed)==1)
+        {
+         bool ran_before=GlobalVariableCheck(g_done_gv);
+         datetime done=(ran_before ? (datetime)GlobalVariableGet(g_done_gv) : 0);
+         if((ran_before || g_trade.HasPosition()) && done<closed[0])
+           {
+            g_last_bar=0;   // first tick sees a "new bar" and latches it
+            PrintFormat("DTF_EA: catching up on the %s decision for %s",
+                        TimeToString(closed[0],TIME_DATE),_Symbol);
+           }
+        }
+     }
 
    g_ready=true;
    PrintFormat("DTF_EA ready on %s. Warm-up needs %d D1 bars. Magic %I64u.",
@@ -288,6 +316,7 @@ void OnTick()
       ManageOpenPosition(g_pending_sig,g_pending_vs,g_pending_bar);
    else
       ConsiderEntry(g_pending_sig,g_pending_vs,g_pending_bar);
+   GlobalVariableSet(g_done_gv,(double)g_pending_bar);
   }
 //+------------------------------------------------------------------+
 //| Manage an open trade. Order matters: the cheapest exit first.     |

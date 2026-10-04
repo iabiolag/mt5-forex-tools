@@ -28,7 +28,6 @@ def parse_args():
     ap = dr.make_parser()
     ap.add_argument("--port", type=int, default=8765)
     ap.add_argument("--pairs", nargs="*", default=[], help="Pairs your plan allows (default: any pair)")
-    ap.add_argument("--max-lot", type=float, default=0, help="Biggest lot your plan allows (default 0 = no cap)")
     ap.add_argument("--max-open", type=int, default=3, help="Max trades open at once (default 3)")
     ap.add_argument("--no-browser", action="store_true", help="Don't open the browser")
     return ap.parse_args()
@@ -135,7 +134,7 @@ class Data:
         ov = self.overview()
         sym = dr.resolve(name)
         if sym is None:
-            return {"error": f"'{name.upper()}' is not a symbol at this broker. Try e.g. EURUSD or GBP."}
+            return {"error": f"'{name.upper()}' is not a symbol at this broker. Try e.g. EURUSD."}
         r = self.rows.get(sym)
         if r is None:  # not in the overview list - analyse it now
             _, _, risk_money = self.account()
