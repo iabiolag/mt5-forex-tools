@@ -454,6 +454,10 @@ def build_rows(syms, today, args, risk_money):
         r["tf"] = " ".join("+" if c > 0 else "-" for c in r["comps"]) if r["comps"] else None
         r["used"] = r["today"] / r["typical_now"] * 100 if r["today"] is not None else None
         r["lot"], r["risk_usd"], r["too_small"] = size_lot(r, risk_money)
+        max_lot = getattr(args, "max_lot", 0)
+        if max_lot and r["lot"] is not None and not r["too_small"] and r["lot"] > max_lot + 1e-9:
+            r["lot"] = max(r["vol_min"], max_lot)  # your plan's lot cap beats the 1% size
+            r["risk_usd"] = r["lot"] * r["SL"] * r["pip_value"]
     rows.sort(key=lambda r: -abs(r["score"] or 0))
     return rows
 
@@ -474,6 +478,8 @@ def make_parser():
     ap.add_argument("--max-week-loss", type=float, default=0, help="Stop for the week at this %% loss (default off)")
     ap.add_argument("--max-month-loss", type=float, default=0, help="Stop for the month at this %% loss (default off)")
     ap.add_argument("--floor", type=float, default=0, help="Stop live trading at/below this balance (default off)")
+    ap.add_argument("--max-lot", type=float, default=0,
+                    help="Biggest lot your plan allows - caps the Lot size column (default 0 = no cap)")
     ap.add_argument("--trend", type=float, default=0.5,
                     help="Trend score needed to call UP/DOWN, same as the DTF indicator threshold (default 0.5)")
     return ap
@@ -582,6 +588,8 @@ def main():
     print(f"Vol vs 6m     = typical day now vs typical day over 6 months (100% = normal).")
     print(f"Lot size      = lot that loses about {args.risk}% of your account (${risk_money:.2f} of ${balance:.2f}) if the")
     print(f"                suggested SL is hit. Rounded DOWN, so the real loss is at or under that.")
+    if args.max_lot:
+        print(f"                Capped at your plan's max lot ({args.max_lot:g}) - 'Loss if SL hit' is for the capped lot.")
     print(f"                '!' / SKIP = even the smallest lot ({rows[0]['vol_min']}) loses MORE than {args.risk}% here.")
     print(f"                      Skip the pair - do NOT take it with a smaller SL than suggested.")
     print(f"                Change the risk with e.g. --risk 0.5 (half a percent).")

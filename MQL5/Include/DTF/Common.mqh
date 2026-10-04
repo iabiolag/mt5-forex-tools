@@ -130,9 +130,17 @@ string DTF_RegimeToString(const ENUM_DTF_REGIME r)
 //+------------------------------------------------------------------+
 //| One pip in price terms. 5- and 3-digit quotes price in tenths of |
 //| a pip, so a pip is 10 points there and 1 point everywhere else.  |
+//| Metals are the exception: gold quotes 3 digits but a gold pip is  |
+//| $0.10, silver's $0.01 - the same convention as the Python tools   |
+//| (daily_range.py PIP_OVERRIDE), so both show the same pip counts.  |
 //+------------------------------------------------------------------+
 double DTF_PipSize(const string symbol)
   {
+   string s=symbol;
+   StringToUpper(s);
+   if(StringFind(s,"XAU")==0) return(0.1);
+   if(StringFind(s,"XAG")==0) return(0.01);
+
    int    digits=(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS);
    double point =SymbolInfoDouble(symbol,SYMBOL_POINT);
    if(point<=0.0) return(0.0);

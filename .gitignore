@@ -13,3 +13,7 @@ backtest_trades.csv
 
 # Compiled MQL5 - build from source with F7 in MetaEditor
 *.ex5
+
+# research harness output
+research_cache/
+confirm_research_results.csv

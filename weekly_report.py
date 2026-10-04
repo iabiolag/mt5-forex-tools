@@ -319,6 +319,9 @@ def main():
         print(f"\n{line}\n{title}\n{line}")
         print(f"{'':16}{'Trades':>7}{'Win%':>6}{'Net':>10}{'Per trade':>11}")
         for name, ts in sorted(groups.items(), key=lambda kv: stats(kv[1])["net"]):
+            if not ts:
+                print(f"{name:16}{'none yet':>7}")
+                continue
             s = stats(ts)
             print(f"{name:16}{s['n']:>7}{s['win_rate']:>5.0f}%{money(s['net']):>10}{money(s['expect']):>11}")
 
