@@ -549,12 +549,20 @@ async function renderPair(sym) {
 
     <div class="card section">
       <h2>My open trades on ${r.symbol}</h2>
-      ${p.positions.length ? `<div class="tablewrap"><table><thead><tr><th>Side</th><th>Lot</th><th>Opened</th><th>Open price</th><th>SL</th><th>TP</th><th>Profit now</th></tr></thead><tbody>
+      ${p.positions.length ? `${p.positions.map(t => trailAdvice(t, px)).join("")}
+      <div class="tablewrap"><table><thead><tr><th>Side</th><th>Lot</th><th>Opened</th><th>Open price</th><th>SL</th><th>Trail stop</th><th>TP</th><th>Profit now</th></tr></thead><tbody>
         ${p.positions.map(t => `<tr style="cursor:default"><td><b>${t.side}</b></td><td>${t.lot.toFixed(2)}</td><td>${t.opened}</td><td>${px(t.open)}</td>
           <td>${t.sl ? `${px(t.sl)} <span class="muted">(${n0(t.sl_pips)} pips)</span>` : `<b style="color:var(--bad-ink)">NO SL!</b>`}</td>
+          <td>${t.trail ? `<b>${px(t.trail.stop)}</b>` : "–"}</td>
           <td>${t.tp ? `${px(t.tp)} <span class="muted">(${n0(t.tp_pips)} pips)</span>` : "–"}</td>
           <td style="color:${t.profit >= 0 ? "var(--good-ink)" : "var(--bad-ink)"}">${signed$(t.profit)}</td></tr>`).join("")}
-      </tbody></table></div>` : `<p class="muted">No trade open on this pair.</p>`}
+      </tbody></table></div>
+      <details class="help small" style="margin-top:10px"><summary>How the trail stop works</summary>
+        <p>It starts ${p.positions[0].trail ? n0(p.positions[0].trail.dist_pips) + " pips" : "2 typical H4 candles"} from your entry
+        (2 × the typical H4 candle before you opened). Each time a 4-hour candle closes, it moves to the best price since you opened minus that same distance –
+        and it only ever moves in your favour. Move your SL to it after each H4 candle (or add the <b>DTF_TrailLine</b> indicator to an H4 chart in MT5
+        to see the same line there). Tested on 29 pairs: it lost less per trade than a fixed take-profit, but it does not make bad entries good.</p></details>` :
+      `<p class="muted">No trade open on this pair.</p>`}
     </div>
 
     <div class="card section">
@@ -584,6 +592,26 @@ async function renderPair(sym) {
     <p class="small muted section">Numbers from MT5 at ${esc(p.generated)}. This page only reads data – it never places, changes or closes trades.</p>`;
   drawChart(p);
   window.scrollTo(0, 0);
+}
+
+/* What to do about one open trade, from its H4 trail stop (same rule as DTF_TrailLine in MT5). */
+function trailAdvice(t, px) {
+  const tr = t.trail;
+  if (!tr) return `<div class="banner" style="background:var(--surface-2)"><div class="icon">📏</div><div>
+    <b>Trail stop not available</b><span class="small">Not enough H4 history before this trade – open its H4 chart in MT5 and refresh.</span></div></div>`;
+  const locked = tr.locked_pips >= 0 ? `${n0(tr.locked_pips)} pips of profit are locked in` : `the stop is still ${n0(-tr.locked_pips)} pips below break-even`;
+  const say = {
+    through: ["stop", "⛔", `Price is through the trail stop (${px(tr.stop)}) – the plan exits here. Close the trade.`, ""],
+    no_sl: ["stop", "⚠️", `This ${t.side} has NO stop loss! Set it to ${px(tr.stop)} now.`, ""],
+    move: ["warn", "⬆️", `Move your SL from ${px(t.sl)} to ${px(tr.stop)}`, `${n0(tr.move_pips)} pips closer – ${locked}.`],
+    ok: ["ok", "✅", `Your SL is at or ahead of the trail stop (${px(tr.stop)}) – nothing to do`, `${locked}.`],
+  }[tr.state];
+  const bg = { stop: "var(--bad-soft)", warn: "var(--warn-soft)", ok: "var(--good-soft)" }[say[0]];
+  return `<div class="banner" style="background:${bg};margin-top:0;margin-bottom:12px"><div class="icon">${say[1]}</div><div>
+    <b>${t.side} ${t.lot.toFixed(2)}: ${esc(say[2])}</b>
+    <span class="small">${say[3] ? esc(say[3]) + " " : ""}Price is ${n0(tr.gap_pips)} pips from the trail stop. It only moves ${t.side === "BUY" ? "up" : "down"}, when a 4-hour candle closes.</span>
+    ${tr.flip ? `<span class="small" style="display:block;margin-top:4px;color:var(--bad-ink)"><b>D1 trend score ${(tr.score >= 0 ? "+" : "") + tr.score.toFixed(2)} has turned against this ${t.side}</b> – the plan closes it next morning.</span>` : ""}
+  </div></div>`;
 }
 
 function atrCheck(r, p) {
@@ -633,8 +661,16 @@ function drawChart(p) {
   const data = p.candles;
   const W = 900, H = 380, L = 8, R = 84, T = 12, B = 40;
   const levels = p.side && p.levels ? p.levels[p.side] : null;
+  // trail stop of each open trade: the stop in force at the end of each day since entry
+  const trails = p.positions.filter(t => t.trail).map(t => {
+    let v = null;
+    const pts = data.map(c => { if (c.date >= t.trail.entry_day && t.trail.by_day[c.date] != null) v = t.trail.by_day[c.date];
+      return c.date >= t.trail.entry_day ? v : null; });
+    return { side: t.side, stop: t.trail.stop, pts };
+  });
   let lo = Math.min(...data.map(c => c.low)), hi = Math.max(...data.map(c => c.high));
   if (levels) { lo = Math.min(lo, levels.sl, levels.tp); hi = Math.max(hi, levels.sl, levels.tp); }
+  trails.forEach(tr => { lo = Math.min(lo, tr.stop); hi = Math.max(hi, tr.stop); });
   const pad = (hi - lo) * 0.04; lo -= pad; hi += pad;
   const n = data.length, step = (W - L - R) / n, bw = Math.max(2, step * 0.62);
   const x = i => L + step * i + step / 2, y = v => T + (hi - v) / (hi - lo) * (H - T - B);
@@ -646,7 +682,8 @@ function drawChart(p) {
   // grid + price labels
   for (let i = 0; i <= 5; i++) {
     const v = lo + (hi - lo) * i / 5, yy = y(v);
-    const clash = levels && ["tp", "sl", "entry"].some(k => Math.abs(y(levels[k]) - yy) < 16);
+    const clash = (levels && ["tp", "sl", "entry"].some(k => Math.abs(y(levels[k]) - yy) < 16)) ||
+      trails.some(tr => Math.abs(y(tr.stop) - yy) < 16);
     svg += `<line x1="${L}" x2="${W - R}" y1="${yy}" y2="${yy}" stroke="${line}" stroke-width="1"/>`;
     if (!clash) svg += `<text x="${W - R + 6}" y="${yy + 4}" font-size="12" fill="${ink3}">${v.toFixed(dg)}</text>`;
   }
@@ -655,18 +692,30 @@ function drawChart(p) {
   data.forEach((c, i) => { const m = c.date.slice(0, 7); if (m !== lastM) { lastM = m;
     if (i > 0) svg += `<line x1="${x(i) - step / 2}" x2="${x(i) - step / 2}" y1="${T}" y2="${H - B}" stroke="${line}" stroke-dasharray="2 4"/>`;
     svg += `<text x="${x(i) - step / 2 + 3}" y="${H - 10}" font-size="12" fill="${ink3}">${new Date(c.date + "T00:00").toLocaleString("en", { month: "short" })}</text>`; } });
-  // SL / TP lines for the trend side
-  if (levels) {
-    // Tags sorted top to bottom and pushed apart so they never cover each other
-    const tags = [["tp", up, "TP"], ["sl", dn, "SL"], ["entry", ink3, "Now"]]
-      .map(([k, c, lab]) => ({ k, c, lab, yy: y(levels[k]), ty: y(levels[k]) })).sort((a, b) => a.yy - b.yy);
-    tags.forEach((t, i) => { if (i && t.ty < tags[i - 1].ty + 20) t.ty = tags[i - 1].ty + 20; });
-    tags.forEach(({ k, c, lab, yy, ty }) => {
-      svg += `<line x1="${L}" x2="${W - R}" y1="${yy}" y2="${yy}" stroke="${c}" stroke-width="1.5" stroke-dasharray="6 4"/>
-        <rect x="${W - R + 2}" y="${ty - 9}" width="${R - 4}" height="18" rx="4" fill="${c}"/>
-        <text x="${W - R + 6}" y="${ty + 4}" font-size="11.5" fill="#fff" font-weight="700">${lab} ${levels[k].toFixed(dg)}</text>`;
+  // SL / TP lines for the trend side (dashed), trail stop of open trades (solid amber steps)
+  const warn = col("--warn");
+  const tags = [];
+  if (levels)
+    [["tp", up, "TP"], ["sl", dn, "SL"], ["entry", ink3, "Now"]].forEach(([k, c, lab]) => {
+      svg += `<line x1="${L}" x2="${W - R}" y1="${y(levels[k])}" y2="${y(levels[k])}" stroke="${c}" stroke-width="1.5" stroke-dasharray="6 4"/>`;
+      tags.push({ c, ink: "#fff", text: `${lab} ${levels[k].toFixed(dg)}`, yy: y(levels[k]) });
     });
-  }
+  trails.forEach(tr => {
+    let d = "";
+    tr.pts.forEach((v, i) => { if (v == null) return;
+      d += `${d ? "L" : "M"}${x(i) - step / 2},${y(v)} L${x(i) + step / 2},${y(v)} `; });
+    // today: the stop in force right now, out to the price axis
+    const lastX = d ? x(n - 1) + step / 2 : L;
+    d += `${d ? "L" : "M"}${lastX},${y(tr.stop)} L${W - R},${y(tr.stop)}`;
+    svg += `<path d="${d}" fill="none" stroke="${warn}" stroke-width="2.5" stroke-linejoin="round"/>`;
+    tags.push({ c: warn, ink: "#0b0b0b", text: `Trail ${tr.stop.toFixed(dg)}`, yy: y(tr.stop) });
+  });
+  // Tags sorted top to bottom and pushed apart so they never cover each other
+  tags.sort((a, b) => a.yy - b.yy).forEach((t, i) => { t.ty = i && t.yy < tags[i - 1].ty + 20 ? tags[i - 1].ty + 20 : t.yy; });
+  tags.forEach(({ c, ink, text, ty }) => {
+    svg += `<rect x="${W - R + 2}" y="${ty - 9}" width="${R - 4}" height="18" rx="4" fill="${c}"/>
+      <text x="${W - R + 6}" y="${ty + 4}" font-size="11.5" fill="${ink}" font-weight="700">${text}</text>`;
+  });
   // candles
   data.forEach((c, i) => {
     const color = c.close >= c.open ? up : dn;
@@ -682,7 +731,8 @@ function drawChart(p) {
   $("#chartLegend").innerHTML = `<span><i style="background:${up}"></i>Up day</span><span><i style="background:${dn}"></i>Down day</span>
     <span><i style="background:${col("--accent")};height:3px"></i>20-day average (price above it = rising)</span>
     <span><i style="background:${col("--accent-soft")}"></i>Last 5 days (pullback check)</span>
-    ${levels ? `<span>Dashed lines = where your ${p.side} SL / TP would go if opened now</span>` : ""}`;
+    ${levels ? `<span>Dashed lines = where your ${p.side} SL / TP would go if opened now</span>` : ""}
+    ${trails.length ? `<span><i style="background:${warn};height:3px"></i>Trail stop of your open trade (where your SL should be)</span>` : ""}`;
   const svgEl = box.querySelector("svg"), tip = $("#tip"), xh = $("#xhair");
   svgEl.querySelector("#hit").addEventListener("mousemove", e => {
     const rect = svgEl.getBoundingClientRect(), sx = (e.clientX - rect.left) / rect.width * W;

@@ -68,6 +68,10 @@ symbol should be, and tells you when to move it. It never touches the trade - yo
 Install: copy `MQL5\Indicators\DTF\DTF_TrailLine.mq5` next to `DTF_Dashboard.mq5`, compile
 with F7, and drag it onto an H4 chart of the pair you are trading.
 
+The browser dashboard shows the same trail (computed the same way in `dashboard.py`, `h4_trail`):
+"move your SL" advice on the overview banner, a Trail stop column and advice box under
+*My open trades* on the pair page, and the trail drawn in amber on the pair's daily chart.
+
 Why this rule (`python confirm_research.py --only h4exits`, 29 pairs, plan-style trades,
 chosen on 2021-2023 and checked on 2024-2026): versus a fixed 2R take profit it lost less
 per trade in both periods (-0.024R vs -0.045R, then -0.073R vs -0.102R). It is a better way to
