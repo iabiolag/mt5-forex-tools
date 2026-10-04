@@ -25,6 +25,7 @@ launcher (Windows) that reads your own rules from `settings.bat`.
 | `weekly_report.py` | Weekly report card: results and rule breaks graded against the trading plan |
 | `pnl_report.py` | Profit and loss of every closed trade by day, week and month |
 | `backtest_plan.py` | Backtest of the trading plan's entry rules on D1 history |
+| `confirm_research.py` | Research harness: entry confirmations and exits on D1 (and `--only h4exits` on H4), in-sample vs out-of-sample |
 
 ### Set up for your own account
 
@@ -44,10 +45,33 @@ Adapting to another broker:
   (gold 1 pip = 0.10, silver 0.01); change them if you count pips differently.
 - **Pair list** - `DEFAULT_SYMBOLS` in `daily_range.py` (all 28 majors, gold and GBPSGD);
   any pair you have traded is added automatically.
-- **Spreads in the backtest** - `SPREAD` in `backtest_plan.py`.
+- **Spreads in the backtests** - taken from your broker's own candle history (the `spread` field).
 
 The CSV files the tools write (`daily_range.csv`, `pnl_trades.csv`, `weekly_report_trades.csv`,
 `backtest_trades.csv`) contain your own account data or results and are git-ignored.
+
+## Trailing stop line (H4)
+
+`DTF_TrailLine` draws, on an **H4** chart, where the stop loss of your open trade on that
+symbol should be, and tells you when to move it. It never touches the trade - you move the SL.
+
+- **Start:** 2 x the typical H4 candle from the entry (median high-low of the 120 H4 candles
+  closed before the trade) - the same SL `daily_range.py --sl-tf H4 --sl 2` suggests.
+- **Trail:** after every closed H4 candle the stop moves to the best price since entry minus
+  that same distance. It only moves in the trade's favour and never repaints.
+- **Panel:** "Move your SL from X to Y", "Your SL is ahead of the trail - nothing to do",
+  "NO STOP LOSS", or "Price is through the trail - close", plus the D1 trend score with a
+  warning when it turns against the trade (the tested rule closes the trade next morning).
+- **Alerts:** a pop-up (optionally a push to the MT5 phone app) once per H4 candle when the
+  SL should move, and once per day when the D1 trend turns.
+
+Install: copy `MQL5\Indicators\DTF\DTF_TrailLine.mq5` next to `DTF_Dashboard.mq5`, compile
+with F7, and drag it onto an H4 chart of the pair you are trading.
+
+Why this rule (`python confirm_research.py --only h4exits`, 29 pairs, plan-style trades,
+chosen on 2021-2023 and checked on 2024-2026): versus a fixed 2R take profit it lost less
+per trade in both periods (-0.024R vs -0.045R, then -0.073R vs -0.102R). It is a better way to
+manage a trade, **not** an edge - none of the entries tested were profitable.
 
 ## Deliverables
 
@@ -60,6 +84,7 @@ The CSV files the tools write (`daily_range.csv`, `pnl_trades.csv`, `weekly_repo
 | `MQL5/Include/DTF/TradeManager.mqh` | Execution, ATR stop, chandelier trail, exit reasons, state persistence |
 | `MQL5/Include/DTF/Journal.mqh` | CSV journal of trades and skipped signals |
 | `MQL5/Indicators/DTF/DTF_Dashboard.mq5` | The chart indicator (phase 1) |
+| `MQL5/Indicators/DTF/DTF_TrailLine.mq5` | Trailing-stop line for your own open trade, H4 (see below) |
 | `MQL5/Experts/DTF/DTF_EA.mq5` | The single-pair EA (phase 2) |
 
 The indicator is deliberately thin: all the maths lives in the `.mqh` modules, and the

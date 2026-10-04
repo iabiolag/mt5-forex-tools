@@ -14,6 +14,7 @@ Results are in R (1R = the initial stop distance). In-sample = before 2023, out-
 Read-only: nothing here places, modifies or closes trades.
 """
 import argparse, csv, datetime as dt, math, os, random, statistics as st, sys
+from bisect import bisect_left
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CACHE = os.path.join(HERE, "research_cache")
@@ -414,7 +415,7 @@ def reversion(data, out):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--refresh", action="store_true", help="re-download D1 history from MT5 first")
-    ap.add_argument("--only", choices=["benchmark", "entries", "exits", "reversion"])
+    ap.add_argument("--only", choices=["benchmark", "entries", "exits", "reversion", "h4exits"])
     ap.add_argument("--pairs", nargs="*", default=MAJORS)
     args = ap.parse_args()
     if args.refresh or not os.path.isdir(CACHE):
@@ -426,12 +427,128 @@ def main():
     first = min(D["date"][150] for D in data.values())
     print(f"{len(data)} pairs, trading from {first}; in-sample < {SPLIT}, out-of-sample >= {SPLIT}")
     out = []
-    experiments(data, args.only, out)
+    if args.only != "h4exits":
+        experiments(data, args.only, out)
     if args.only in (None, "reversion"):
         reversion(data, out)
+    if args.only == "h4exits":
+        h4_exits()
+    if not out:
+        return
     with open(os.path.join(HERE, "confirm_research_results.csv"), "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=list(out[0]))
         w.writeheader(); w.writerows(out)
+
+
+
+# ----------------------------------------------------------------------------- H4 exits (manual-plan style)
+def load_h4(pair):
+    rows = list(csv.DictReader(open(os.path.join(CACHE, pair + "_H4.csv"))))
+    H = {"t": [dt.datetime.utcfromtimestamp(int(r["time"])) for r in rows]}
+    for k in ("open", "high", "low", "close", "spread"):
+        H[k] = [float(r[k]) for r in rows]
+    n = len(H["t"])
+    tr = [H["high"][0] - H["low"][0]] + [max(H["high"][i], H["close"][i - 1]) - min(H["low"][i], H["close"][i - 1])
+                                         for i in range(1, n)]
+    H["atr14"] = sma(tr, 14)
+    rng = [h - l for h, l in zip(H["high"], H["low"])]
+    # Early broker history holds ~1 candle a day even on H4; real H4 data starts at the first day
+    # with 5+ candles. Nothing before that (plus 120 candles of warm-up) is used.
+    per_day = {}
+    for x in H["t"]:
+        per_day[x.date()] = per_day.get(x.date(), 0) + 1
+    first = next((dd for dd in sorted(per_day) if per_day[dd] >= 5), None)
+    k0 = next((i for i, x in enumerate(H["t"]) if first and x.date() >= first), n)
+    H["unit"] = [st.median(rng[i - 120:i]) if i >= k0 + 120 else None for i in range(n)]  # 120 closed H4 candles
+    H["atr14"] = [a if i >= k0 + 14 else None for i, a in enumerate(H["atr14"])]
+    return H
+
+
+def simulate_h4(H, D, cfg, entry_hour=8):
+    """Plan-style trades on H4: on the first H4 candle at/after entry_hour each weekday, enter if the
+    D1 trend (candles closed before that day) is clean (|score| >= 0.5, all 3 lookbacks agree).
+    SL = cfg['sl'] x typical H4 candle. Exits: SL / trail / TP checked on every H4 candle
+    (stop first if both touched), trend flip checked each morning, filled at that candle's open.
+    Trail (cfg['trail'], cfg['trail_basis'] 'atr' = ATR14 H4, 'unit' = typical H4 candle) hangs
+    from the best high/low since entry, only tightens, and starts once the trade is cfg['start'] R up."""
+    ddates = D["date"]
+    def d1_state(day):
+        k = bisect_left(ddates, day) - 1  # last D1 candle closed before `day`
+        if k < 0 or D["sig"][k] is None:
+            return None, None
+        return D["sig"][k], [cp[k] for cp in D["comps"]]
+    t, o, h, l, c, spr = H["t"], H["open"], H["high"], H["low"], H["close"], H["spread"]
+    n, trades, i, last_day = len(t), [], 121, None
+    while i < n - 1:
+        day = t[i].date()
+        if t[i].weekday() >= 5 or t[i].hour < entry_hour or day == last_day or H["unit"][i] is None:
+            i += 1; continue
+        last_day = day
+        s, comps = d1_state(day)
+        if s is None or not ((s >= 0.5 and all(x > 0 for x in comps)) or (s <= -0.5 and all(x < 0 for x in comps))):
+            i += 1; continue
+        d = 1 if s > 0 else -1
+        entry = o[i] + (spr[i] if d > 0 else 0.0)
+        risk = cfg["sl"] * H["unit"][i]
+        stop = entry - d * risk
+        tp = entry + d * cfg["tp"] * risk if cfg.get("tp") else None
+        ext, mfe, exit_px, j, checked = entry, 0.0, None, i, day
+        while j < n:
+            sp = spr[j]
+            # morning trend check (exit at this candle's open)
+            if cfg.get("flip") is not None and t[j].date() > checked and t[j].hour >= entry_hour and t[j].weekday() < 5:
+                checked = t[j].date()
+                s2, _ = d1_state(checked)
+                if s2 is not None and ((d > 0 and s2 <= cfg["flip"]) or (d < 0 and s2 >= -cfg["flip"])):
+                    exit_px, why = (o[j] if d > 0 else o[j] + sp), "flip"; break
+            lo, hi = (l[j], h[j]) if d > 0 else (l[j] + sp, h[j] + sp)  # longs exit on bid, shorts on ask
+            op = o[j] if d > 0 else o[j] + sp
+            if (d > 0 and lo <= stop) or (d < 0 and hi >= stop):
+                exit_px, why = ((min(op, stop) if d > 0 else max(op, stop)), "stop"); break
+            if tp is not None and ((d > 0 and hi >= tp) or (d < 0 and lo <= tp)):
+                exit_px, why = ((max(op, tp) if d > 0 else min(op, tp)), "tp"); break
+            ext = max(ext, h[j]) if d > 0 else min(ext, l[j])
+            mfe = max(mfe, d * (ext - entry) / risk)
+            if cfg.get("trail") and mfe >= cfg.get("start", 0.0):
+                base = H["atr14"][j] if cfg.get("trail_basis", "atr") == "atr" else H["unit"][i]
+                if base:
+                    lvl = ext - d * cfg["trail"] * base
+                    stop = max(stop, lvl) if d > 0 else min(stop, lvl)
+            j += 1
+        if exit_px is None:
+            break
+        trades.append((day, d * (exit_px - entry) / risk, why, j - i))
+        # next entry no earlier than the morning after the exit (plan: no same-day re-entry)
+        last_day = t[j].date()
+        i = j + 1
+    return trades
+
+
+H4_SPLIT = dt.date(2024, 1, 1)  # real H4 history starts mid-2021 at this broker
+
+
+def h4_exits():
+    pairs = [p for p in MAJORS if os.path.exists(os.path.join(CACHE, p + "_H4.csv"))]
+    data = [(load_h4(p), load(p)) for p in pairs]
+    print(f"in-sample before {H4_SPLIT}, out-of-sample from {H4_SPLIT} (real H4 history starts mid-2021)")
+    print(f"\n--- H4 exits, plan-style entries (clean D1 trend, 08:00 entry, SL 2x typical H4 candle), {len(pairs)} pairs ---")
+    variants = [
+        ("PLAN NOW: TP 4x (=2R), flip -0.5", dict(sl=2, tp=2, flip=-0.5)),
+        ("TP 2R, flip at 0", dict(sl=2, tp=2, flip=0.0)),
+        ("TP 3R, flip at 0", dict(sl=2, tp=3, flip=0.0)),
+    ] + [(f"trail {k} ATR14(H4) from {s}R, flip 0", dict(sl=2, trail=k, start=s, flip=0.0))
+         for k in (2.0, 3.0, 4.0) for s in (0.0, 1.0)] + [
+        (f"trail {k} typical H4 candles from {s}R, flip 0", dict(sl=2, trail=k, trail_basis="unit", start=s, flip=0.0))
+        for k in (2.0, 3.0) for s in (0.0, 1.0)]
+    for name, cfg in variants:
+        ins, oos, pos_i, pos_o = [], [], 0, 0
+        for H, D in data:
+            t = simulate_h4(H, D, cfg)
+            a = [r for dd, r, *_ in t if dd < H4_SPLIT]; b = [r for dd, r, *_ in t if dd >= H4_SPLIT]
+            ins += a; oos += b; pos_i += sum(a) > 0; pos_o += sum(b) > 0
+        s1, s2 = stats(ins), stats(oos)
+        print(f"{name:44s} | IS n={s1['n']:5d} exp={s1['exp']:+.3f} win={s1['win']:4.0f}% pairs+={pos_i:2d}"
+              f" | OOS n={s2['n']:5d} exp={s2['exp']:+.3f} win={s2['win']:4.0f}% pairs+={pos_o:2d}")
 
 
 if __name__ == "__main__":
