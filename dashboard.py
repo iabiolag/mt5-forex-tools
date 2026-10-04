@@ -11,7 +11,7 @@ Page 2: one pair on its own - plan checklist, chart, SL/TP prices, your history 
 Only listens on this computer (127.0.0.1). Close the black window to stop it.
 Read-only: nothing here places, modifies or closes trades.
 """
-import contextlib, datetime as dt, io, json, os, sys, threading, time, webbrowser
+import contextlib, datetime as dt, io, json, os, statistics as st, sys, threading, time, webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 import MetaTrader5 as mt5
@@ -22,6 +22,9 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 CACHE_SECONDS = 60
 CHART_DAYS = 90
 utc = dt.datetime.utcfromtimestamp
+# Trailing stop - the same rule and settings as MQL5/Indicators/DTF/DTF_TrailLine.mq5
+TRAIL_MULT, TRAIL_UNIT_BARS, TRAIL_FLIP = 2.0, 120, 0.0
+H4 = 14400
 
 
 def parse_args():
@@ -35,6 +38,73 @@ def parse_args():
 
 def clean(sym):
     return sym.removesuffix("m")
+
+
+def h4_trail(p, score=None):
+    """DTF_TrailLine.mq5 for one open position, so the dashboard and the MT5 line agree.
+
+    Start: TRAIL_MULT x the typical H4 candle (median high-low of the 120 H4 candles before the
+    trade) from the entry. After each closed H4 candle: best price since entry minus that same
+    distance; it only moves in the trade's favour. Like the indicator, the newest candle is
+    treated as still forming (at weekends that is Friday's last one - it counts on Monday).
+    Returns None when there is not enough H4 history."""
+    sym, buy = p.symbol, p.type == mt5.POSITION_TYPE_BUY
+    d = 1 if buy else -1
+    info = mt5.symbol_info(sym)
+    pip = dr.pip_size(sym, info)
+    n = int((dr.server_now() - p.time) / H4) + TRAIL_UNIT_BARS + 30
+    r = mt5.copy_rates_from_pos(sym, mt5.TIMEFRAME_H4, 0, n)
+    if r is None or len(r) < TRAIL_UNIT_BARS + 1:
+        return None
+    t = [int(x) for x in r["time"]]
+    e = max((i for i in range(len(t)) if t[i] <= p.time), default=-1)  # candle the trade opened in
+    if e < TRAIL_UNIT_BARS:
+        return None
+    dist = TRAIL_MULT * st.median(float(r[i]["high"] - r[i]["low"]) for i in range(e - TRAIL_UNIT_BARS, e))
+    start = stop = p.price_open - d * dist
+    ext, series, last = p.price_open, [], len(t) - 1
+    for k in range(e, last + 1):
+        series.append((t[k], stop))  # the stop in force during candle k
+        if k == last:
+            break
+        # the entry candle's high/low may come from before the fill
+        if k > e or p.time == t[e]:
+            ext = max(ext, float(r[k]["high"])) if buy else min(ext, float(r[k]["low"]))
+        stop = max(stop, ext - dist) if buy else min(stop, ext + dist)
+    tick = mt5.symbol_info_tick(sym)
+    price = (tick.bid if buy else tick.ask) if tick else 0
+    if price and (price <= stop if buy else price >= stop):
+        state = "through"
+    elif not p.sl:
+        state = "no_sl"
+    elif (p.sl < stop - pip / 2) if buy else (p.sl > stop + pip / 2):
+        state = "move"
+    else:
+        state = "ok"
+    by_day = {}
+    for ts, v in series:
+        by_day[utc(ts).date().isoformat()] = v  # stop in force at the end of each day
+    return {"stop": round(stop, info.digits), "start": round(start, info.digits),
+            "dist_pips": dist / pip, "locked_pips": d * (stop - p.price_open) / pip,
+            "gap_pips": abs(price - stop) / pip if price else None,
+            "move_pips": abs(stop - p.sl) / pip if p.sl else None,
+            "state": state, "by_day": by_day, "entry_day": utc(p.time).date().isoformat(),
+            "flip": score is not None and (score <= TRAIL_FLIP if buy else score >= -TRAIL_FLIP),
+            "score": score}
+
+
+def trail_warning(p, tr, digits):
+    """One plain-English line for the overview banner, or None if nothing to do."""
+    name, side = clean(p.symbol), "BUY" if p.type == mt5.POSITION_TYPE_BUY else "SELL"
+    if tr["state"] == "through":
+        return f"{name} {side}: price is through the trail stop ({tr['stop']:.{digits}f}) - the plan exits here. Close it."
+    if tr["state"] == "move":
+        return (f"{name} {side}: move your SL from {p.sl:.{digits}f} to {tr['stop']:.{digits}f} "
+                f"(trail line, {tr['move_pips']:.0f} pips closer).")
+    if tr["flip"]:
+        return (f"{name} {side}: the D1 trend score ({tr['score']:+.2f}) turned against it - "
+                f"the plan closes it next morning.")
+    return None
 
 
 def quiet(fn, *a):
@@ -101,6 +171,12 @@ class Data:
                                    a.max_trades, a.max_loss, a.max_losses,
                                    a.max_week_loss, a.max_month_loss, a.floor)
         positions = mt5.positions_get() or []
+        for p in positions:
+            r = next((x for x in rows if x["symbol"] == p.symbol), None)
+            tr = h4_trail(p, r["score"] if r else None)
+            w = tr and trail_warning(p, tr, mt5.symbol_info(p.symbol).digits)
+            if w:
+                warnings.append(w)
         self.rows = {r["symbol"]: r for r in rows}
         self.today = today
         self.stops = stops
@@ -242,6 +318,7 @@ class Data:
                 "sl_pips": (abs(p.price_open - p.sl) / pip) if p.sl else None,
                 "tp_pips": (abs(p.tp - p.price_open) / pip) if p.tp else None,
                 "profit": p.profit + p.swap, "opened": utc(p.time).strftime("%a %d %b %H:%M"),
+                "trail": h4_trail(p, r["score"]),
             } for p in mine],
             "history": [{
                 "side": t["side"], "lot": t["lot"], "opened": t["opened"].strftime("%d %b %Y"),
