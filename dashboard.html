@@ -353,6 +353,32 @@ $("#refresh").addEventListener("click", async () => {
   $("#refresh").disabled = false; $("#refresh").textContent = "↻ Refresh";
 });
 
+/* ---------------- prop firm (FTMO) ---------------- */
+function propPanel(p) {
+  const room = (lim) => p.equity - lim;
+  const bar = (frac, bad) => `<div style="height:8px;border-radius:4px;background:var(--line);margin-top:6px;overflow:hidden">
+      <div style="height:100%;width:${Math.max(0, Math.min(100, frac * 100)).toFixed(0)}%;background:var(${bad ? "--bad" : "--good"})"></div></div>`;
+  const dayUsed = (p.start_balance - p.equity) / (p.daily_pct / 100 * p.initial);
+  const maxUsed = (p.peak - p.equity) / (p.max_pct / 100 * p.initial);
+  const gain = (p.balance - p.initial) / (p.target - p.initial);
+  return `<h2 class="section">FTMO challenge rules</h2>
+    <div class="tiles">
+      <div class="tile"><div class="k">Daily loss: equity must stay above</div><div class="v">${usd(p.daily_limit)}</div>
+        <div class="h">Room left today ${usd(room(p.daily_limit))} · resets at midnight Prague time</div>${bar(dayUsed, dayUsed > 0.5)}</div>
+      <div class="tile"><div class="k">Max loss: equity must stay above</div><div class="v">${usd(p.max_limit)}</div>
+        <div class="h">Room left ${usd(room(p.max_limit))}${p.drawdown_mode ? " · risk HALVED until you are further away" : ""}</div>${bar(maxUsed, maxUsed > 0.5)}</div>
+      <div class="tile"><div class="k">Profit target</div><div class="v">${usd(p.balance - p.initial)} <span class="muted" style="font-size:16px">of ${usd(p.target - p.initial)}</span></div>
+        <div class="h">Balance ${usd(p.balance)} → ${usd(p.target)}, with every trade closed</div>${bar(gain, false)}</div>
+      <div class="tile"><div class="k">Best Day rule (max 50%)</div><div class="v">${p.best_day ? p.best_share.toFixed(0) + "%" : "–"}</div>
+        <div class="h">${p.best_day ? (p.best_share <= 50 ? "OK" : `Profitable days must add ${usd(p.best_more_needed)} more`) + ` · ${p.profit_days} profitable of ${p.trading_days} days`
+                                  : "No profitable day yet"}</div></div>
+    </div>
+    <p class="small muted">The bars fill up as you use the room (daily loss, max loss) and as you near the target.
+      If every stop loss on your open trades is hit, equity would be ${usd(p.worst)}.
+      The next trade may risk ${usd(p.risk_cap)}: your ${state.ov.settings.risk}% of the starting ${usd(p.initial)}${p.drawdown_mode ? " (halved)" : ""},
+      cut if needed so a full stop-out still leaves ${usd(p.buffer)} above both limits.</p>`;
+}
+
 /* ---------------- overview ---------------- */
 async function renderOverview() {
   let ov;
@@ -374,11 +400,12 @@ async function renderOverview() {
       </div>
     </div>
     ${rolloverNote()}
+    ${ov.prop ? propPanel(ov.prop) : ""}
     ${ov.market_open ? "" : `<p class="muted small" style="margin-top:12px">🕑 The market is closed right now (weekend or holiday). "Today so far" and "Room" are blank; everything else is up to date.</p>`}
     <div class="tiles section">
       <div class="tile"><div class="k">Balance</div><div class="v">${usd(a.balance)}</div></div>
       <div class="tile"><div class="k">Equity (incl. open trades)</div><div class="v">${usd(a.equity)}</div></div>
-      <div class="tile"><div class="k">Your ${s.risk}% risk per trade</div><div class="v">${usd(a.risk_money)}</div><div class="h">Lot sizes are built from this</div></div>
+      <div class="tile"><div class="k">${ov.prop ? "Next trade may risk" : `Your ${s.risk}% risk per trade`}</div><div class="v">${usd(a.risk_money)}</div><div class="h">Lot sizes are built from this${s.commission ? ` (incl. $${s.commission} commission per lot)` : ""}</div></div>
       <div class="tile"><div class="k">Open trades</div><div class="v">${ov.open_count} <span class="muted" style="font-size:16px">of ${s.max_open}</span></div></div>
     </div>
     <div class="controls">
