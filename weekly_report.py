@@ -198,10 +198,10 @@ def main():
     ap.add_argument("--max-lot", type=float, default=0, help="Biggest allowed lot (default: no cap)")
     ap.add_argument("--max-open", type=int, default=0, help="Max trades open at once (default: no cap)")
     ap.add_argument("--floor", type=float, default=0, help="Stop trading at/below this balance (default: none)")
+    ap.add_argument("--terminal", default="", help="Path of the terminal64.exe to read from (default: the open one)")
     args = ap.parse_args()
 
-    if not mt5.initialize():
-        sys.exit(f"Could not connect to MT5 - is the terminal open and logged in? {mt5.last_error()}")
+    dr.connect(args)
     acc = mt5.account_info()
     trades, _ = load_trades(args)
     mt5.shutdown()

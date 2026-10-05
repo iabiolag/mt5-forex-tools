@@ -17,6 +17,7 @@ from urllib.parse import parse_qs, urlparse
 import MetaTrader5 as mt5
 import daily_range as dr
 import pnl_report
+import prop_rules
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CACHE_SECONDS = 60
@@ -124,12 +125,18 @@ class Data:
         self.trades_cache = None
 
     def connect(self):
-        if mt5.terminal_info() is None and not mt5.initialize():
+        a = self.args
+        if mt5.terminal_info() is None and not (mt5.initialize(path=a.terminal) if a.terminal else mt5.initialize()):
             raise RuntimeError(f"Could not connect to MT5 - is the terminal open and logged in? {mt5.last_error()}")
 
     def account(self):
+        """(account, money lots are sized from, money one trade may lose). In prop mode the
+        last one is prop_rules' cap: % of the initial capital, cut near the FTMO limits."""
         acc = mt5.account_info()
         balance = min(acc.balance, acc.equity) if acc else 0
+        if self.args.prop:
+            self.prop = prop_rules.status(self.args)
+            return acc, balance, self.prop["risk_cap"]
         return acc, balance, balance * self.args.risk / 100
 
     def row_json(self, r):
@@ -148,7 +155,7 @@ class Data:
             return None, None
         cap = self.args.max_lot or r["lot"]  # 0 = no cap
         lot = max(r["vol_min"], min(r["lot"], cap))
-        return lot, lot * r["SL"] * r["pip_value"]
+        return lot, lot * (r["SL"] * r["pip_value"] + self.args.commission)
 
     def overview(self, force=False):
         if not force and self.overview_cache and time.time() - self.overview_time < CACHE_SECONDS:
@@ -170,6 +177,13 @@ class Data:
         stops, limits_text = quiet(dr.daily_limits_check, today, acc.equity, acc.balance,
                                    a.max_trades, a.max_loss, a.max_losses,
                                    a.max_week_loss, a.max_month_loss, a.floor)
+        prop = None
+        if a.prop:
+            (prop_stops, prop), prop_text = quiet(prop_rules.check, a, self.prop)
+            stops = prop_stops + stops
+            limits_text = prop_text + "\n\n" + limits_text
+            prop = {**prop, "today": prop["today"].isoformat(), "daily_pct": a.prop_daily,
+                    "max_pct": a.prop_max, "target_pct": a.prop_target, "buffer_pct": a.prop_buffer}
         positions = mt5.positions_get() or []
         for p in positions:
             r = next((x for x in rows if x["symbol"] == p.symbol), None)
@@ -191,11 +205,12 @@ class Data:
                          "max_trades": a.max_trades, "max_loss": a.max_loss, "max_losses": a.max_losses,
                          "max_open_risk": a.max_open_risk, "max_open": a.max_open, "max_lot": a.max_lot,
                          "max_week_loss": a.max_week_loss, "max_month_loss": a.max_month_loss, "floor": a.floor,
-                         "plan_pairs": sorted(self.plan)},
+                         "plan_pairs": sorted(self.plan), "commission": a.commission},
             "rows": [self.row_json(r) for r in rows],
             "warnings": warnings, "stops": stops,
             "open_text": open_text, "limits_text": limits_text,
             "open_count": len(positions),
+            "prop": prop,
         }
         self.overview_time = time.time()
         self.trades_cache = None

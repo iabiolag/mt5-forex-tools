@@ -110,10 +110,10 @@ def main():
     ap.add_argument("--last-week", action="store_true", help="Detail last week instead of this week")
     ap.add_argument("--week-of", help="Detail the week containing this date (YYYY-MM-DD)")
     ap.add_argument("--days", type=int, default=31, help="Days in the daily table (default 31, 0 = all)")
+    ap.add_argument("--terminal", default="", help="Path of the terminal64.exe to read from (default: the open one)")
     args = ap.parse_args()
 
-    if not mt5.initialize():
-        sys.exit(f"Could not connect to MT5 - is the terminal open and logged in? {mt5.last_error()}")
+    dr.connect(args)
     acc = mt5.account_info()
     trades, _ = load_trades()
     today = dr.server_today()

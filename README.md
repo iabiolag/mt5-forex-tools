@@ -50,6 +50,32 @@ Adapting to another broker:
 The CSV files the tools write (`daily_range.csv`, `pnl_trades.csv`, `weekly_report_trades.csv`,
 `backtest_trades.csv`) contain your own account data or results and are git-ignored.
 
+**Two terminals open?** Set `TERMINAL` in `settings.bat` to the `terminal64.exe` the launchers
+should read (`--terminal` on the command line); otherwise the MT5 package attaches to whichever
+terminal it finds first.
+
+## Prop-firm mode (FTMO 1-Step)
+
+`--prop` (in `daily_range.py` and `dashboard.py`, via `prop_rules.py`) adds the FTMO 1-Step
+rules on top of your own:
+
+- **Maximum Daily Loss** - equity must stay above the balance at 00:00 Prague time minus 3% of
+  the initial capital. The day is counted in Prague time, not the broker's (FTMO's server is one
+  hour ahead, so it resets at 01:00 on the MT5 clock).
+- **Maximum Loss** - equity must stay above the highest Prague-midnight balance (or the initial
+  capital) minus 10%. **Profit Target** - balance +10% with every trade closed.
+- **Best Day** - the best day's closed profit as a share of all profitable days (max 50%), and
+  how much more profit is needed when it is over.
+- **Lot sizing** - risk is `--risk` % of the *initial* capital, halved within half of the max
+  loss, and cut so that if every open SL and the new one are hit, equity is still
+  `--prop-buffer` % above both limits. `--commission` (per lot, round trip) is part of the loss.
+
+Launchers: `ftmo.bat` (terminal), `ftmo_dashboard.bat` (browser, port 8766, so it can run
+next to the normal dashboard) and `ftmo_pnl.bat`, all reading `settings_ftmo.bat` (copy
+`settings_ftmo.example.bat`; git-ignored). Other prop firms with the same rule shapes work
+with `--prop-daily / --prop-max / --prop-target`; firms whose daily limit is on equity, or
+counted on the broker's day, need changes in `prop_rules.py`.
+
 ## Trailing stop line (H4)
 
 `DTF_TrailLine` draws, on an **H4** chart, where the stop loss of your open trade on that

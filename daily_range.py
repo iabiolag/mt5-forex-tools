@@ -250,11 +250,12 @@ def analyse(sym, today, sl_mult, tp_mult, sl_tf="D1"):
     }
 
 
-def size_lot(r, risk_money):
-    """Largest lot whose SL loss stays within risk_money. Rounds down, never up."""
-    loss_per_lot = r["SL"] * r["pip_value"]
-    if loss_per_lot <= 0:
+def size_lot(r, risk_money, commission=0):
+    """Largest lot whose SL loss (plus the round-trip commission) stays within risk_money.
+    Rounds down, never up."""
+    if r["SL"] * r["pip_value"] <= 0:
         return None, None, False  # pip value unknown - show '-' rather than guess
+    loss_per_lot = r["SL"] * r["pip_value"] + commission
     step = r["vol_step"]
     lot = math.floor(risk_money / loss_per_lot / step + 1e-9) * step
     too_small = lot < r["vol_min"]
@@ -453,11 +454,12 @@ def build_rows(syms, today, args, risk_money):
         r["trend"] = "-" if s is None else "UP" if s >= args.trend else "DOWN" if s <= -args.trend else "SIDE"
         r["tf"] = " ".join("+" if c > 0 else "-" for c in r["comps"]) if r["comps"] else None
         r["used"] = r["today"] / r["typical_now"] * 100 if r["today"] is not None else None
-        r["lot"], r["risk_usd"], r["too_small"] = size_lot(r, risk_money)
+        commission = getattr(args, "commission", 0)
+        r["lot"], r["risk_usd"], r["too_small"] = size_lot(r, risk_money, commission)
         max_lot = getattr(args, "max_lot", 0)
         if max_lot and r["lot"] is not None and not r["too_small"] and r["lot"] > max_lot + 1e-9:
             r["lot"] = max(r["vol_min"], max_lot)  # your plan's lot cap beats the 1% size
-            r["risk_usd"] = r["lot"] * r["SL"] * r["pip_value"]
+            r["risk_usd"] = r["lot"] * (r["SL"] * r["pip_value"] + commission)
     rows.sort(key=lambda r: -abs(r["score"] or 0))
     return rows
 
@@ -482,14 +484,33 @@ def make_parser():
                     help="Biggest lot your plan allows - caps the Lot size column (default 0 = no cap)")
     ap.add_argument("--trend", type=float, default=0.5,
                     help="Trend score needed to call UP/DOWN, same as the DTF indicator threshold (default 0.5)")
+    ap.add_argument("--terminal", default="",
+                    help="Path of the terminal64.exe to read from, when several MT5 terminals are open")
+    ap.add_argument("--commission", type=float, default=0,
+                    help="Commission per 1.00 lot, open + close, in account money - added to 'Loss if SL hit' (default 0)")
+    ap.add_argument("--prop", action="store_true",
+                    help="Prop-firm mode (FTMO 1-Step rules): risk is a %% of the initial capital and every lot "
+                         "is capped so a stop-out stays inside the daily and max loss limits")
+    ap.add_argument("--prop-initial", type=float, default=0, help="Initial capital (default: the first deposit)")
+    ap.add_argument("--prop-daily", type=float, default=3.0, help="Maximum Daily Loss, %% of initial (default 3)")
+    ap.add_argument("--prop-max", type=float, default=10.0, help="Maximum Loss, %% of initial (default 10)")
+    ap.add_argument("--prop-target", type=float, default=10.0, help="Profit Target, %% of initial (default 10)")
+    ap.add_argument("--prop-buffer", type=float, default=1.0,
+                    help="Keep this %% of initial unused above both loss limits (default 1)")
     return ap
+
+
+def connect(args):
+    """Attach to MT5 - to the terminal in --terminal if given (needed when two are open)."""
+    ok = mt5.initialize(path=args.terminal) if getattr(args, "terminal", "") else mt5.initialize()
+    if not ok:
+        sys.exit(f"Could not connect to MT5 - is the terminal open and logged in? {mt5.last_error()}")
 
 
 def main():
     args = make_parser().parse_args()
 
-    if not mt5.initialize():
-        sys.exit(f"Could not connect to MT5 - is the terminal open and logged in? {mt5.last_error()}")
+    connect(args)
     acc = mt5.account_info()
     now = dt.datetime.now()
 
@@ -508,6 +529,11 @@ def main():
     # Size off the smaller of balance and equity: open losing trades reduce what you really have.
     balance = min(acc.balance, acc.equity) if acc else 0
     risk_money = balance * args.risk / 100
+    prop = None
+    if args.prop:  # risk = % of the initial capital, cut further if the FTMO limits are close
+        import prop_rules
+        prop = prop_rules.status(args)
+        risk_money = prop["risk_cap"]
     rows = build_rows(syms, today, args, risk_money)
     if not rows:
         sys.exit("No daily data for any symbol - check MT5 is connected (bottom-right corner) and try again.")
@@ -586,8 +612,14 @@ def main():
     else:
         print(f"                SL/TP are based on this: SL = {args.sl} x typical day, TP = {args.tp} x typical day.")
     print(f"Vol vs 6m     = typical day now vs typical day over 6 months (100% = normal).")
-    print(f"Lot size      = lot that loses about {args.risk}% of your account (${risk_money:.2f} of ${balance:.2f}) if the")
-    print(f"                suggested SL is hit. Rounded DOWN, so the real loss is at or under that.")
+    if prop:
+        print(f"Lot size      = lot that loses at most ${risk_money:.2f} if the suggested SL is hit (see PROP FIRM")
+        print(f"                RULES below for why this amount). Rounded DOWN, so the real loss is at or under that.")
+    else:
+        print(f"Lot size      = lot that loses about {args.risk}% of your account (${risk_money:.2f} of ${balance:.2f}) if the")
+        print(f"                suggested SL is hit. Rounded DOWN, so the real loss is at or under that.")
+    if args.commission:
+        print(f"                'Loss if SL hit' includes ${args.commission:g} commission per 1.00 lot.")
     if args.max_lot:
         print(f"                Capped at your plan's max lot ({args.max_lot:g}) - 'Loss if SL hit' is for the capped lot.")
     print(f"                '!' / SKIP = even the smallest lot ({rows[0]['vol_min']}) loses MORE than {args.risk}% here.")
@@ -606,6 +638,8 @@ def main():
     warnings = open_trades_check(rows, balance, args.max_open_risk)
     stops = daily_limits_check(today, acc.equity, acc.balance, args.max_trades, args.max_loss, args.max_losses,
                                args.max_week_loss, args.max_month_loss, args.floor)
+    if prop:
+        stops = prop_rules.check(args, prop)[0] + stops
     mt5.shutdown()
     print()
     for w in warnings:
