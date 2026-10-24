@@ -24,6 +24,7 @@ launcher (Windows) that reads your own rules from `settings.bat`.
 | `dashboard.py` + `dashboard.html` | The same numbers in the browser (`http://127.0.0.1:8765`): cards or full table, search by pair or currency, and a page per pair with the plan checklist, D1 chart, SL/TP prices, ATR cross-check and your history on that pair |
 | `weekly_report.py` | Weekly report card: results and rule breaks graded against the trading plan |
 | `pnl_report.py` | Profit and loss of every closed trade by day, week and month |
+| `friday_report.py` | One browser page for the week: results and rule breaks for the main and FTMO accounts, FTMO limits, trades copied between accounts, same-currency bets and rollover stop-outs |
 | `backtest_plan.py` | Backtest of the trading plan's entry rules on D1 history |
 | `confirm_research.py` | Research harness: entry confirmations and exits on D1 (and `--only h4exits` on H4), in-sample vs out-of-sample |
 
@@ -53,6 +54,24 @@ The CSV files the tools write (`daily_range.csv`, `pnl_trades.csv`, `weekly_repo
 **Two terminals open?** Set `TERMINAL` in `settings.bat` to the `terminal64.exe` the launchers
 should read (`--terminal` on the command line); otherwise the MT5 package attaches to whichever
 terminal it finds first.
+
+## Friday report (automatic)
+
+`friday_report.bat` builds `reports/week_YYYY-MM-DD.html` for both accounts, with the rules from
+`settings.bat` and `settings_ftmo.bat`, and opens it in the browser. Run on Friday to Sunday it
+reports that week, and Monday to Thursday the week before (`--week-of`, `--no-ftmo` and
+`--no-open` override this). To run it by itself every Friday at 23:30 (after the forex close),
+in PowerShell:
+
+```powershell
+$a = New-ScheduledTaskAction -Execute "$PWDriday_report.bat" -WorkingDirectory "$PWD"
+$t = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Friday -At "23:30"
+$s = New-ScheduledTaskSettingsSet -StartWhenAvailable
+Register-ScheduledTask -TaskName "Forex Weekly Report" -Action $a -Trigger $t -Settings $s
+```
+
+`-StartWhenAvailable` runs a missed Friday as soon as the PC is back on. The MT5 package starts
+a closed terminal by itself, so the terminals don't need to be open.
 
 ## Prop-firm mode (FTMO 1-Step)
 

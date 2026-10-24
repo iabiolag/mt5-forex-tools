@@ -19,3 +19,6 @@ backtest_trades.csv
 # research harness output
 research_cache/
 confirm_research_results.csv
+
+# Weekly pages made by friday_report.py
+reports/
