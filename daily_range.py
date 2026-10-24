@@ -69,6 +69,8 @@ def server_now():
     whole-hour offset from real time. Crypto trades at weekends, so try it first.
     """
     for name in ("BTCUSD", "ETHUSD", "EURUSD", "XAUUSD"):
+        if name in ("EURUSD", "XAUUSD") and forex_closed():
+            continue  # Friday's last tick can sit a whole number of hours in the past by chance
         s = resolve(name)
         tick = mt5.symbol_info_tick(s) if s else None
         if not tick:
@@ -77,7 +79,37 @@ def server_now():
         hours = round(diff / 3600)
         if abs(diff - hours * 3600) < 600 and abs(hours) <= 14:
             return time.time() + hours * 3600
-    return time.time()
+    return time.time() + week_close_offset() * 3600
+
+
+def forex_closed():
+    """True from Friday 22:00 to Sunday 20:00 UTC, when forex is closed whatever the time of year."""
+    now = dt.datetime.utcnow()
+    return (now.weekday() == 4 and now.hour >= 22) or now.weekday() == 5 or (now.weekday() == 6 and now.hour < 20)
+
+
+def week_close_offset():
+    """Server offset in hours from the forex week's last H1 candle, which opens at 16:00 New York
+    time (the market closes at 17:00 NY). Used when there is no fresh tick: at weekends, or
+    when the terminal has lost its connection."""
+    s = resolve("EURUSD")
+    rates = mt5.copy_rates_from_pos(s, mt5.TIMEFRAME_H1, 0, 300) if s else None
+    if rates is None or len(rates) < 2:
+        return 0
+    times = [int(r["time"]) for r in rates]
+    closes = [a for a, b in zip(times, times[1:]) if b - a > 86400]  # bar before a weekend gap
+    if forex_closed():
+        closes.append(times[-1])  # the newest candle is this week's last
+    if not closes:
+        return 0
+    d = dt.datetime.utcfromtimestamp(closes[-1]).date()
+    # US summer time: second Sunday of March to first Sunday of November
+    second_sun_mar = dt.date(d.year, 3, 8) + dt.timedelta(days=(6 - dt.date(d.year, 3, 8).weekday()) % 7)
+    first_sun_nov = dt.date(d.year, 11, 1) + dt.timedelta(days=(6 - dt.date(d.year, 11, 1).weekday()) % 7)
+    ny_behind = 4 if second_sun_mar <= d < first_sun_nov else 5
+    real = dt.datetime(d.year, d.month, d.day, 16 + ny_behind, tzinfo=dt.timezone.utc).timestamp()
+    hours = round((closes[-1] - real) / 3600)
+    return (hours + 12) % 24 - 12 if abs(hours) > 14 else hours
 
 
 def server_today():

@@ -178,6 +178,21 @@ def stats(ts):
     }
 
 
+def rule_kind(msg):
+    """The rule behind a rule-break message ("trade #3 of the day" -> "too many trades that day")."""
+    if msg.startswith("trade #"):
+        return "too many trades that day"
+    if msg.startswith("after "):
+        return "after a losing streak"
+    if msg.startswith("lot "):
+        return "lot too big"
+    if msg.startswith("already ") and msg.endswith("trades open"):
+        return "too many trades open"
+    if msg.startswith("balance "):
+        return "below the balance floor"
+    return msg
+
+
 def money(v):
     return f"{'+' if v >= 0 else '-'}${abs(v):.2f}"
 
@@ -267,19 +282,7 @@ def main():
     print("With/Against trend = direction of the trade vs the D1 trend score on the candles closed before entry.")
 
     # Which rules were broken, per week
-    def kind(msg):
-        if msg.startswith("trade #"):
-            return "too many trades that day"
-        if msg.startswith("after "):
-            return "after a losing streak"
-        if msg.startswith("lot "):
-            return "lot too big"
-        if msg.startswith("already ") and msg.endswith("trades open"):
-            return "too many trades open"
-        if msg.startswith("balance "):
-            return "below the balance floor"
-        return msg
-
+    kind = rule_kind
     kinds = {kind(m) for t in trades for m in t["broke"]}
     if kinds:
         shown = [k for k, _ in rows[-4:]]
